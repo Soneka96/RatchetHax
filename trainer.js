@@ -2,6 +2,7 @@ import inquirer from 'inquirer';
 import Game from './Game.js';
 import memoryjs from 'memoryjs';
 import chalk from 'chalk';
+import { getCollectionBoltProfileChoice, isBoltOnlyProfile, runBoltOnlyMenu } from './trainer-mode.js';
 
 const filteredProcesses = memoryjs.getProcesses().filter(p => p.szExeFile === 'pcsx2.exe' || p.szExeFile.startsWith('pcsx2-') || p.szExeFile === 'rpcs3.exe');
 const processChoices = filteredProcesses.map(p => {
@@ -42,6 +43,7 @@ const setupQuestions = [{
         new inquirer.Separator('--- PS3 ---'),
         { name: 'Ratchet & Clank 1 [NPUA80643]', value: 'rc1_ps3_npua80643' },
         { name: 'Ratchet & Clank 2 [NPUA80644]', value: 'rc2_ps3_npua80644' },
+        getCollectionBoltProfileChoice(),
         { name: 'Ratchet & Clank 3 [NPUA80645]', value: 'rc3_ps3_npua80645' },
         { name: 'Ratchet & Clank: Deadlocked [NPUA80646]', value: 'rc4_ps3_npua80646' },
         { name: 'Ratchet & Clank: Tools of Destruction [NPUA80965]', value: 'rctod_ps3_npua80965' },
@@ -571,6 +573,20 @@ async function quit() {
     process.exit(0);
 }
 
+async function boltOnlyMain() {
+    await runBoltOnlyMenu({
+        prompt: questions => inquirer.prompt(questions),
+        readBolts: () => game.bolts,
+        setBolts,
+        quit,
+        renderBolts: bolts => {
+            console.log(chalk.bold.green('─── Ratchet & Clank 2: Going Commando — Collection ───\n'));
+            console.log(chalk.bold('Bolts: ') + bolts);
+        },
+        clear: () => console.clear()
+    });
+}
+
 /* if (process.platform === "win32") {
     const readline = await import("readline");
     var rl = readline.createInterface({input: process.stdin, output: process.stdout});
@@ -665,6 +681,8 @@ async function menu(menuKey) {
 }
 
 async function main() {
+
+    if (isBoltOnlyProfile(game.address)) return await boltOnlyMain();
 
     console.log(chalk.bold.green('─── Main Menu ───'));
 
