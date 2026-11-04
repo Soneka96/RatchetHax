@@ -141,6 +141,18 @@ test('does not decode when the reported byte count is full but the buffer is sho
     assert.equal(Object.hasOwn(result, 'value'), false);
 });
 
+test('does not decode an oversized buffer when its reported count only covers the request', () => {
+    const result = decodeRead({
+        success: true,
+        bytes: Uint8Array.from([0, 0, 0, 7, 0xff, 0xff, 0xff, 0xff]),
+        bytesRead: 4,
+        requestedBytes: 4
+    }, 'uint32', 'big');
+
+    assert.deepEqual(result, { status: 'partial', requestedBytes: 4, bytesRead: 4 });
+    assert.equal(Object.hasOwn(result, 'value'), false);
+});
+
 test('classifies zero-byte success as partial and a failed full-count read as failed', () => {
     assert.deepEqual(classifyRead({
         success: true,

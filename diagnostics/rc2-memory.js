@@ -108,7 +108,7 @@ export function classifyRead(read) {
         status = 'partial';
     } else if (!success) {
         status = 'failed';
-    } else if (bytesRead !== requestedBytes || availableBytes < requestedBytes) {
+    } else if (bytesRead !== requestedBytes || availableBytes !== requestedBytes) {
         status = 'partial';
     }
 
