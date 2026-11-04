@@ -9,11 +9,12 @@ import rc1CollectionProfile from '../games/rc1_ps3_bcus98282.js';
 import {
     getBoltOnlyMenuChoices,
     getBoltOnlyMenuAccess,
-    getBoltOnlyMemoryActions,
     getCollectionBoltProfileChoice,
     getCollectionRc1BoltProfileChoice,
     isBoltOnlyProfile,
-    runBoltOnlyMenu
+    promptAndSetBolts,
+    runBoltOnlyMenu,
+    setBoltCountAndVerify
 } from '../trainer-mode.js';
 
 const trainerPath = fileURLToPath(new URL('../trainer.js', import.meta.url));
@@ -43,52 +44,79 @@ test('registers Collection RC1 as a separate bolt-only profile', () => {
     assert.equal(profile.writeEnabled, true);
 });
 
-test('routes RC1 to its checked memory callbacks and leaves RC2 on its existing callbacks', () => {
-    const defaultRead = () => 'rc2-read';
-    const defaultSet = () => 'rc2-set';
-    const rc1Read = () => 'rc1-read';
-    const rc1Set = () => 'rc1-set';
-    const callbacks = {
-        readBolts: defaultRead,
-        setBolts: defaultSet,
-        readCollectionRc1Bolts: rc1Read,
-        setCollectionRc1Bolts: rc1Set
-    };
+test('keeps RC1 and RC2 addresses separate while sharing the Set Bolts verifier', async () => {
+    assert.notDeepEqual(rc1CollectionProfile.bolts, profile.bolts);
+    let current = 99453;
+    const writes = [];
+    const verified = await setBoltCountAndVerify({
+        readBolts: () => current,
+        writeBolts: value => { writes.push(value); current = value; },
+        value: 105055
+    });
 
-    assert.deepEqual(getBoltOnlyMemoryActions(rc1CollectionProfile, callbacks), {
-        readBolts: rc1Read,
-        setBolts: rc1Set
-    });
-    assert.deepEqual(getBoltOnlyMemoryActions(profile, callbacks), {
-        readBolts: defaultRead,
-        setBolts: defaultSet
-    });
-    assert.throws(() => getBoltOnlyMemoryActions(rc1CollectionProfile, {}), /callbacks/);
+    assert.deepEqual(writes, [105055]);
+    assert.equal(verified, 105055);
 });
 
-test('dispatches Set Bolts to the profile-specific callback in the bolt-only menu', async () => {
-    const calls = [];
-    const callbacks = {
-        readBolts: () => 244016,
-        setBolts: async () => { calls.push('rc2'); },
-        readCollectionRc1Bolts: () => 99453,
-        setCollectionRc1Bolts: async () => { calls.push('rc1'); }
-    };
-    const rc1Actions = getBoltOnlyMemoryActions(rc1CollectionProfile, callbacks);
-    const rc2Actions = getBoltOnlyMemoryActions(profile, callbacks);
+test('rejects failed or invalid bolt writes in the shared Set Bolts verifier', async () => {
+    let writeCalls = 0;
 
-    for (const actions of [rc1Actions, rc2Actions]) {
-        const selected = ['setBolts', 'quit'];
-        await runBoltOnlyMenu({
-            prompt: async () => ({ action: selected.shift() }),
-            ...actions,
-            quit: async () => {},
-            renderBolts: () => {},
-            clear: () => {}
-        });
+    await assert.rejects(setBoltCountAndVerify({
+        readBolts: () => 99453,
+        writeBolts: () => { writeCalls += 1; },
+        value: 105055
+    }), /Bolt write verification failed/);
+    await assert.rejects(setBoltCountAndVerify({
+        readBolts: () => 0,
+        writeBolts: () => { writeCalls += 1; },
+        value: -1
+    }), /unsigned 32-bit integer/);
+    for (const value of [0x100000000, 1.5, Number.NaN]) {
+        await assert.rejects(setBoltCountAndVerify({
+            readBolts: () => 0,
+            writeBolts: () => { writeCalls += 1; },
+            value
+        }), /unsigned 32-bit integer/);
     }
+    await assert.rejects(setBoltCountAndVerify({
+        readBolts: () => { throw new Error('read callback failed'); },
+        writeBolts: () => {},
+        value: 1
+    }), /read callback failed/);
+    await assert.rejects(setBoltCountAndVerify({
+        readBolts: () => 1,
+        writeBolts: () => { throw new Error('write callback failed'); },
+        value: 1
+    }), /write callback failed/);
 
-    assert.deepEqual(calls, ['rc1', 'rc2']);
+    assert.equal(writeCalls, 1, 'invalid values must be rejected before writing');
+});
+
+test('prompts with the shared bolt count and verifies the chosen value', async () => {
+    let current = 99453;
+    let writeCalls = 0;
+    const prompts = [];
+    const verified = await promptAndSetBolts({
+        prompt: async questions => { prompts.push(questions); return { bolts: 105055 }; },
+        readBolts: () => current,
+        writeBolts: value => { writeCalls += 1; current = value; }
+    });
+
+    assert.deepEqual(prompts, [{
+        type: 'number', name: 'bolts', default: 99453, message: 'Enter new bolt count:'
+    }]);
+    assert.equal(writeCalls, 1);
+    assert.equal(verified, 105055);
+});
+
+test('rejects an invalid prompted count before invoking the shared writer', async () => {
+    let writeCalls = 0;
+    await assert.rejects(promptAndSetBolts({
+        prompt: async () => ({ bolts: 0x100000000 }),
+        readBolts: () => 99453,
+        writeBolts: () => { writeCalls += 1; }
+    }), /unsigned 32-bit integer/);
+    assert.equal(writeCalls, 0);
 });
 
 test('exposes only bolt display, bolt setting, refresh, and quit actions', () => {
@@ -184,6 +212,20 @@ test('rejects an action outside the bolt-only menu', async () => {
     assert.equal(quitCalls, 0);
 });
 
+test('returns the Quit callback result to the outer setup flow', async () => {
+    const returnToGameSelection = Symbol('select-another-game');
+    const result = await runBoltOnlyMenu({
+        prompt: async () => ({ action: 'quit' }),
+        readBolts: () => 99453,
+        setBolts: async () => {},
+        quit: async () => returnToGameSelection,
+        renderBolts: () => {},
+        clear: () => {}
+    });
+
+    assert.equal(result, returnToGameSelection);
+});
+
 test('routes both Collection profiles through bolt-only handling before generic trainer reads', () => {
     assert.match(trainerSource, /getCollectionBoltProfileChoice\(\)/);
     assert.match(trainerSource, /getCollectionRc1BoltProfileChoice\(\)/);
@@ -191,7 +233,16 @@ test('routes both Collection profiles through bolt-only handling before generic 
     assert.match(trainerSource, /const menuAccess = getBoltOnlyMenuAccess\(game\.address\)/);
     assert.match(trainerSource, /readBolts: \(\) => game\.bolts/);
     assert.match(trainerSource, /setBolts,/);
-    assert.match(trainerSource, /getBoltOnlyMemoryActions\(game\.address/);
+    assert.match(trainerSource, /promptAndSetBolts\(/);
+    assert.doesNotMatch(trainerSource, /readCollectionBolts|writeCollectionBolts/);
+    assert.match(trainerSource, /quit: quitBoltOnlyMenu/);
+    assert.match(trainerSource, /return await runBoltOnlyMenu\(/);
+    assert.match(trainerSource, /RETURN_TO_GAME_VERSION_LIST/);
+    assert.match(trainerSource, /while \(result === RETURN_TO_GAME_VERSION_LIST\)/);
+    assert.match(trainerSource, /replaceGameForSelection\(/);
+    assert.match(trainerSource, /processIdentifier/);
+    assert.match(trainerSource, /const processIdentifier = targetProcess\?\.id \|\| setup\.process/);
+    assert.match(trainerSource, /new Game\(processIdentifier, setup\.version\)/);
     const mainStart = trainerSource.indexOf('async function main()');
     const boltOnlyBranch = trainerSource.indexOf('if (isBoltOnlyProfile(game.address)) return await boltOnlyMain();', mainStart);
     const genericMenu = trainerSource.indexOf("console.log(chalk.bold.green('─── Main Menu ───'))", mainStart);
@@ -199,6 +250,11 @@ test('routes both Collection profiles through bolt-only handling before generic 
     assert.ok(boltOnlyBranch > mainStart);
     assert.ok(genericMenu > boltOnlyBranch, 'bolt-only routing must happen before generic menu reads');
     assert.match(trainerSource, /Bolts: '\) \+ game\.bolts/);
+    const quitStart = trainerSource.indexOf('async function quitBoltOnlyMenu()');
+    const quitEnd = trainerSource.indexOf('async function boltOnlyMain()', quitStart);
+    const quitBoltOnlySource = trainerSource.slice(quitStart, quitEnd);
+    assert.match(quitBoltOnlySource, /return RETURN_TO_GAME_VERSION_LIST/);
+    assert.doesNotMatch(quitBoltOnlySource, /process\.exit/);
 });
 
 test('trainer.js parses after the integration change', () => {

@@ -82,31 +82,33 @@ metadata and checksums are in the adjacent `.meta.json` sidecars.
 
 ## Memory backend and trainer result
 
-The `memoryjs@3.5.1` read path preserved the full host address when reading
-`0x3009BC3A0` in this x64 RPCS3 session. Its native read and write methods do
-not expose the Win32 success flag or transferred-byte count, so the RC1
-trainer now uses a separate checked Win32 backend for full 4-byte reads,
-writes, and post-write verification. RC2 continues to use its existing
-memoryjs path.
+RC1 and RC2 now use the same in-process `Game.bolts` / `memoryjs@3.5.1` path.
+The tested x64 addon preserved the full host address when reading
+`0x3009BC3A0`. Its native calls do not expose the Win32 success flag or
+transferred-byte count; the shared Set Bolts action checks the value by reading
+it back. Failed reads can still be ambiguous under this API. `Game` now resets
+the shared memoryjs data-type constants for every selected profile so a
+Collection big-endian profile does not leak into a later PS2 selection.
 
-The first RC1 trainer launch failed before reading because PowerShell formatted
-the returned address with uppercase hex while the JS wrapper compared it to a
-lowercase request. The wrapper now compares normalized case. After that fix,
-the live trainer backend read `99,453` at `0x3009BC3A0` successfully; the full
-Node suite passed (58 tests), and the Pester suites passed (29 tests).
+An intermediate RC1-only PowerShell reader/writer caused the reported
+one-to-two-second menu delay because it started a new process per access. That
+path has been removed; RC1 now reads and writes through the same in-process path
+as RC2. The bolt-only Quit action now closes the selected game handle and
+returns to the game-version list, retaining the selected emulator process.
 
-The RC1 trainer currently starts `powershell.exe` synchronously for each bolt
-read or write so it can check Win32 success and byte counts; the user observed
-about a two-second delay when opening the RC1 menu. RC2 uses its existing
-in-process `memoryjs` path. In the bolt-only menu, Refresh and Set Bolts return
-to the bolt options; Quit closes the process handle and exits the trainer, as
-the requested Exit action specifies.
+The first RC1 trainer launch failed because that intermediate PowerShell
+backend returned uppercase hex while its JS wrapper compared lowercase. The
+case comparison was fixed before the backend was removed.
+
+After the shared-path and selection changes, `node --test` passed (61 tests)
+and the RPCS3 read/snapshot Pester suite passed (19 tests). The checked
+Win32 backend also completed a live read of `99,453` at `0x3009BC3A0` before it
+was removed during this consolidation.
 
 Candidate B is confirmed for the tested session by two normal HUD transitions,
 the targeted write/read-back behavior, and the user's HUD confirmation. It is
 enabled in the RC1 bolt-only trainer profile at the user's direction. The
-profile uses a checked Win32 backend that verifies complete reads, writes, and
-read-back; RC2 keeps its existing memoryjs path.
+profile shares the RC2 bolt-only memory access and menu implementation.
 
 The user chose a one-embedded-game-at-a-time workflow with explicit profile
 selection instead of a runtime subgame guard. The Collection's outer title ID

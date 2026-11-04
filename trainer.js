@@ -2,8 +2,8 @@ import inquirer from 'inquirer';
 import Game from './Game.js';
 import memoryjs from 'memoryjs';
 import chalk from 'chalk';
-import { getBoltOnlyMenuAccess, getBoltOnlyMemoryActions, getCollectionBoltProfileChoice, getCollectionRc1BoltProfileChoice, isBoltOnlyProfile, runBoltOnlyMenu } from './trainer-mode.js';
-import { readCollectionBolts, writeCollectionBolts } from './trainer-memory.js';
+import { getBoltOnlyMenuAccess, getCollectionBoltProfileChoice, getCollectionRc1BoltProfileChoice, isBoltOnlyProfile, promptAndSetBolts, runBoltOnlyMenu } from './trainer-mode.js';
+import { replaceGameForSelection } from './trainer-session.js';
 
 const filteredProcesses = memoryjs.getProcesses().filter(p => p.szExeFile === 'pcsx2.exe' || p.szExeFile.startsWith('pcsx2-') || p.szExeFile === 'rpcs3.exe');
 const processChoices = filteredProcesses.map(p => {
@@ -27,12 +27,7 @@ const targetProcess = processChoices.length > 1 ? await inquirer.prompt({
     choices: processChoices
 }) : undefined;
 
-const setupQuestions = [{
-    type: 'input',
-    name: 'process',
-    default: 'pcsx2.exe',
-    message: 'Enter the process name or PID to target:'
-},{
+const versionQuestion = {
     type: 'list',
     name: 'version',
     message: 'Which game version is running in this process?',
@@ -51,13 +46,20 @@ const setupQuestions = [{
         { name: 'Ratchet & Clank: Tools of Destruction [NPUA80965]', value: 'rctod_ps3_npua80965' },
         { name: 'Ratchet & Clank: A Crack in Time [BCES00748]', value: 'rcacit_ps3_bces00748' }
     ]
-}];
+};
+
+const setupQuestions = [{
+    type: 'input',
+    name: 'process',
+    default: 'pcsx2.exe',
+    message: 'Enter the process name or PID to target:'
+}, versionQuestion];
 
 if (targetProcess?.id) setupQuestions.splice(0, 1);
 
-const setup = await inquirer.prompt(setupQuestions);
-
-const game = new Game(targetProcess.id || setup.process, setup.version);
+let setup = await inquirer.prompt(setupQuestions);
+const processIdentifier = targetProcess?.id || setup.process;
+let game = new Game(processIdentifier, setup.version);
 console.log('Connected to game with process handle ' + game.process);
 
 const select = {
@@ -203,33 +205,11 @@ async function setNanotech() {
 }
 
 async function setBolts() {
-    const answer = await inquirer.prompt([{
-        type: 'number',
-        name: 'bolts',
-        default: game.bolts,
-        message: 'Enter new bolt count:'
-    }]);
-    game.bolts = answer.bolts;
-}
-
-function readCollectionRc1Bolts() {
-    const processId = game.processObject?.th32ProcessID;
-    return readCollectionBolts({ processId, address: game.address.bolts[0] }).value;
-}
-
-async function setCollectionRc1Bolts() {
-    const answer = await inquirer.prompt([{
-        type: 'number',
-        name: 'bolts',
-        default: readCollectionRc1Bolts(),
-        message: 'Enter new bolt count:'
-    }]);
-    const result = writeCollectionBolts({
-        processId: game.processObject?.th32ProcessID,
-        address: game.address.bolts[0],
-        value: answer.bolts
+    await promptAndSetBolts({
+        prompt: question => inquirer.prompt([question]),
+        readBolts: () => game.bolts,
+        writeBolts: value => { game.bolts = value; }
     });
-    console.log(chalk.bold(`Verified bolt count: ${result.afterValue}`));
 }
 
 async function setRaritanium() {
@@ -595,20 +575,22 @@ async function quit() {
     process.exit(0);
 }
 
+const RETURN_TO_GAME_VERSION_LIST = Symbol('return-to-game-version-list');
+
+async function quitBoltOnlyMenu() {
+    console.clear();
+    return RETURN_TO_GAME_VERSION_LIST;
+}
+
 async function boltOnlyMain() {
     const gameTitle = game.address.collection?.gameTitle || 'Ratchet & Clank';
     const menuAccess = getBoltOnlyMenuAccess(game.address);
     const readOnly = !menuAccess.allowSetBolts;
-    const memoryActions = getBoltOnlyMemoryActions(game.address, {
+    return await runBoltOnlyMenu({
+        prompt: questions => inquirer.prompt(questions),
         readBolts: () => game.bolts,
         setBolts,
-        readCollectionRc1Bolts,
-        setCollectionRc1Bolts
-    });
-    await runBoltOnlyMenu({
-        prompt: questions => inquirer.prompt(questions),
-        ...memoryActions,
-        quit,
+        quit: quitBoltOnlyMenu,
         ...menuAccess,
         renderBolts: bolts => {
             console.log(chalk.bold.green(`─── ${gameTitle} — Collection${readOnly ? ' (read-only)' : ''} ───\n`));
@@ -789,5 +771,17 @@ async function main() {
 }
 
 console.clear();
-await main();
+let result = await main();
+while (result === RETURN_TO_GAME_VERSION_LIST) {
+    const replacement = await replaceGameForSelection({
+        closeGame: () => game.close(),
+        promptSelection: () => inquirer.prompt([versionQuestion]),
+        createGame: (processId, version) => new Game(processId, version),
+        processIdentifier
+    });
+    setup = { ...setup, version: replacement.selection.version };
+    game = replacement.game;
+    console.log('Connected to game with process handle ' + game.process);
+    result = await main();
+}
 game.close();

@@ -104,11 +104,11 @@ its address or value relationship cannot be reproduced in this second session.
 
 ## Safety boundary and checks
 
-The candidate probe and snapshot/diff tools do not write game memory. Do not
-add an RC1 Collection trainer profile or enable Set Bolts until the candidate
-is supported by at least two different normal HUD counts. The tested profile
-now exposes Set Bolts using a checked Win32 backend that requires complete
-4-byte reads and writes, then verifies the read-back.
+The candidate probe and snapshot/diff tools do not write game memory. The RC1
+profile exposes only bolt display, refresh, Set Bolts, and Quit. RC1 and RC2
+share the same in-process `Game.bolts` / `memoryjs` access path, and Set Bolts
+checks the requested value with a read-back. The x64 addon ignores native
+Win32 success flags and byte counts, so failed reads can still be ambiguous.
 
 At the user's direction, the trainer relies on selecting the correct embedded
 game profile while only one Collection game is running; it has no independent
@@ -123,7 +123,6 @@ The mocked automated reader/snapshot checks are:
 
 ```powershell
 node --test
-Invoke-Pester -Script .\test\scripts\collection-bolts.Tests.ps1
 Invoke-Pester -Script .\test\diagnostics\rc2-read-process.Tests.ps1
 ```
 

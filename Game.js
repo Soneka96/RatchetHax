@@ -1,6 +1,15 @@
 import memoryjs from 'memoryjs';
 import fs from 'fs';
 
+const endianTypes = ['INT16', 'UINT16', 'INT32', 'UINT32', 'INT64', 'UINT64', 'FLOAT', 'DOUBLE'];
+const defaultMemoryTypes = Object.fromEntries(endianTypes.map(name => [name, memoryjs[name]]));
+
+export function setMemoryEndianness(bigEndian, memoryApi = memoryjs) {
+    for (const name of endianTypes) {
+        memoryApi[name] = bigEndian ? memoryApi[`${name}_BE`] : defaultMemoryTypes[name];
+    }
+}
+
 // Dynamically import game address files from the games directory
 const games = {};
 const gameFiles = fs.readdirSync('./games').filter(file => file.endsWith('.js'));
@@ -20,17 +29,8 @@ export default class Game {
         this.process = this.processObject.handle;
         this.address = games[gameVer];
 
-        // Replace data types with big endian versions if specified
-        if (this.address.bigEndian) {
-            memoryjs.INT16 = memoryjs.INT16_BE;
-            memoryjs.UINT16 = memoryjs.UINT16_BE;
-            memoryjs.INT32 = memoryjs.INT32_BE;
-            memoryjs.UINT32 = memoryjs.UINT32_BE;
-            memoryjs.INT64 = memoryjs.INT64_BE;
-            memoryjs.UINT64 = memoryjs.UINT64_BE;
-            memoryjs.FLOAT = memoryjs.FLOAT_BE;
-            memoryjs.DOUBLE = memoryjs.DOUBLE_BE;
-        };
+        // Reset shared memoryjs types for each game; profiles can change in the same trainer session.
+        setMemoryEndianness(this.address.bigEndian === true);
     }
 
     _readMem(addressObj) {

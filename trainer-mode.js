@@ -26,22 +26,34 @@ export function getBoltOnlyMenuAccess(profile) {
     };
 }
 
-export function getBoltOnlyMemoryActions(profile, {
-    readBolts,
-    setBolts,
-    readCollectionRc1Bolts,
-    setCollectionRc1Bolts
-}) {
-    if (typeof readBolts !== 'function' || typeof setBolts !== 'function' ||
-        typeof readCollectionRc1Bolts !== 'function' || typeof setCollectionRc1Bolts !== 'function') {
-        throw new TypeError('Bolt-only memory actions require default and RC1 read/set callbacks.');
+export async function setBoltCountAndVerify({ readBolts, writeBolts, value }) {
+    if (typeof readBolts !== 'function' || typeof writeBolts !== 'function') {
+        throw new TypeError('Set Bolts requires read and write callbacks.');
+    }
+    if (!Number.isSafeInteger(value) || value < 0 || value > 0xFFFFFFFF) {
+        throw new RangeError('Bolt count must be an unsigned 32-bit integer.');
     }
 
-    const isCollectionRc1 = profile?.boltOnly === true &&
-        profile.collection?.titleId === 'BCUS98282' && profile.collection?.gameNumber === 1;
-    return isCollectionRc1
-        ? { readBolts: readCollectionRc1Bolts, setBolts: setCollectionRc1Bolts }
-        : { readBolts, setBolts };
+    await writeBolts(value);
+    const actual = await readBolts();
+    if (actual !== value) {
+        throw new Error(`Bolt write verification failed: requested ${value}, read ${actual}.`);
+    }
+    return actual;
+}
+
+export async function promptAndSetBolts({ prompt, readBolts, writeBolts }) {
+    if (typeof prompt !== 'function' || typeof readBolts !== 'function' || typeof writeBolts !== 'function') {
+        throw new TypeError('Set Bolts requires prompt, read, and write callbacks.');
+    }
+    const currentValue = await readBolts();
+    const answer = await prompt({
+        type: 'number',
+        name: 'bolts',
+        default: currentValue,
+        message: 'Enter new bolt count:'
+    });
+    return setBoltCountAndVerify({ readBolts, writeBolts, value: answer?.bolts });
 }
 
 export function getBoltOnlyMenuChoices({ allowSetBolts = true, setBoltsDisabledReason = 'runtime game identity is unverified' } = {}) {
@@ -87,8 +99,7 @@ export async function runBoltOnlyMenu({
             continue;
         }
         if (answer.action === 'quit') {
-            await quit();
-            return;
+            return await quit();
         }
         throw new Error(`Unsupported bolt-only trainer action: ${answer.action}`);
     }
