@@ -4,8 +4,9 @@
 
 This investigation compares the standalone RC2 profile (`NPUA80644`) with
 Ratchet & Clank 2 launched from the three-game PS3 Collection (`BCUS98282`). The
-diagnostic and snapshot tools in this repository are read-only. They do not
-write process memory or modify a save.
+diagnostic, snapshot, and diff tools in this repository are read-only. A
+bolt-only Collection trainer profile is now available; it exposes no other
+game fields.
 
 During this user-authorized investigation, a separate one-off memory write was
 used to validate the bolt candidate. It changed live RAM only; the user
@@ -58,6 +59,16 @@ The scan and read APIs verified full byte counts. A successful read only means
 the address was readable; semantic validation came from the before/after HUD
 counts and the user's confirmation.
 
+[`games/rc2_ps3_bcus98282.js`](../games/rc2_ps3_bcus98282.js) contains only the
+confirmed bolt field, its big-endian `uint32` type, the tested guest base and
+offset, and Collection/subgame identity metadata. The trainer selector names it
+“Ratchet & Clank 2: Going Commando [Collection BCUS98282] - Bolts only.” That
+mode shows and sets bolts, refreshes the count, or exits; it skips the generic
+metrics and other game features. A user-authorized test write changed the
+confirmed field from 243,866 to 244,866 and the HUD matched. The diagnostic
+reader and snapshot scanner remain read-only; this one-off test does not
+validate any other write address.
+
 ## Remaining field and build status
 
 Only the bolt field has been validated in the Collection. The health,
@@ -70,8 +81,10 @@ standalone profile's known planet IDs 0–26.
 The internal `NPUA80644` identity and save namespace are confirmed, but no
 byte-for-byte comparison of the Collection's `RC2.ppu.self` against the
 standalone executable was performed. The broader reason the remaining offsets
-differ is unresolved. Do not create a populated `BCUS98282` profile or enable
-trainer writes for the other fields based on these findings.
+differ is unresolved. Collection games 1 and 3 have no profiles yet; the
+metadata shape in the bolt-only profile can be reused when those games are
+investigated. Do not add unverified fields to the BCUS98282 profile or enable
+trainer actions for them.
 
 The [read-only diagnostics runbook](rc2-collection-runbook.md) documents the
 snapshot and diff procedure. Keep snapshots local unless they are deliberately

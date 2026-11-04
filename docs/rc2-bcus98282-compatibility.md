@@ -21,14 +21,17 @@ bolt offset is invalid for the tested Collection instance.
 
 Only the bolt field has been validated in this session. Health, multiplier,
 planet, equipped item, ammo, and unlock fields remain unsupported unless each
-is independently compared with gameplay. Do not create a populated
-`games/rc2_ps3_bcus98282.js` profile from unverified fields, and do not use the
-regular trainer's write functions for BCUS98282.
+is independently compared with gameplay. The new
+`games/rc2_ps3_bcus98282.js` profile contains only the confirmed bolt field.
+Its trainer mode exposes bolt display, refresh, Set Bolts, and Quit; it hides
+the regular trainer's unverified actions. Do not select the standalone
+NPUA80644 profile for the Collection.
 
-The user authorized one targeted live-memory test write while using a test
-save; the write changed process memory and no save-file operation was performed
-by the tool. This one-off exception does not enable writes in the diagnostics or
-trainer code.
+The user authorized a targeted live-memory test write while using a test save.
+The confirmed bolt field changed from 243,866 to 244,866 and the user confirmed
+the HUD. The bolt-only trainer setter writes only this validated field. The
+diagnostic, snapshot, and diff tools remain read-only; no save-file write was
+performed directly by these tools.
 
 For repeatable read-only snapshots and address scans, follow the
 [snapshot and diff runbook](rc2-collection-runbook.md). The full evidence and

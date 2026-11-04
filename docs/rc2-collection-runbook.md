@@ -5,6 +5,17 @@ The snapshot reader and diff scanner do not write process memory. The only
 address profile currently validated for this Collection session is the bolt
 field documented in the [investigation report](rc2-collection-investigation.md).
 
+## Bolt-only trainer profile
+
+In the trainer, select **Ratchet & Clank 2: Going Commando [Collection
+BCUS98282] - Bolts only**. This profile uses the confirmed host address
+`0x301329E80` (guest address `0x01329E80`) and offers only bolt display, refresh,
+Set Bolts, and Quit. The other Collection fields remain absent and unsupported.
+
+This static host address was validated with RPCS3's `g_base_addr` at
+`0x300000000`. Before using the profile in another RPCS3 session or build,
+check its `RPCS3.log` guest-memory base; stop if the base differs.
+
 ## Capture a snapshot
 
 Use 64-bit Windows PowerShell from the repository root. Confirm RC2 is loaded
@@ -73,9 +84,10 @@ address, a mirror, or a plausible value as proof by itself.
 The saved `244012 → 244016` comparison produced guest candidates `0x01329E80`
 and `0x0157E080`. Subsequent testing showed the first address at host
 `0x301329E80` drove the visible bolt value; the second followed it as a mirror.
-The old NPUA80644 bolt address `0x301329A90` remained zero. These findings apply
-to the tested RC2 Collection session; do not infer that the other standalone
-profile fields are valid.
+The old NPUA80644 bolt address `0x301329A90` remained zero. A user-authorized
+test write of +1,000 to the first candidate was confirmed by the HUD. These
+findings apply to the tested RC2 Collection session; do not infer that other
+standalone-profile fields are valid.
 
 ## Automated checks
 
@@ -85,7 +97,7 @@ Invoke-Pester -Script .\test\diagnostics\rc2-read-process.Tests.ps1
 ```
 
 The automated tests use mocked process/read results and temporary snapshot
-files. They do not write game memory or attach to RPCS3. The normal capture and
-diff tools are read-only. No populated `BCUS98282` profile should be added for
-health, planet, equipped item, weapon, or unlock fields until those values are
-independently validated.
+files. They do not attach to RPCS3 or write game memory. The capture and diff
+tools are read-only. The trainer's bolt-only Set Bolts action uses the one
+validated field; do not add health, planet, equipped-item, weapon, or unlock
+fields until they are independently validated.
