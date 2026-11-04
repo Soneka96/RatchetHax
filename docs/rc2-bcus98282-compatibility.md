@@ -6,24 +6,25 @@
 
 Never use the trainer's write actions with BCUS98282 until the address mappings and native memory access have been verified. Back up the RPCS3 save before experimenting.
 
-## Step 1: Collect read-only measurements
+## Step 1: Collect read-only measurements (preferred Windows probe)
 
-With RC2 *actively loaded in-game* (not the Collection menu), note the on-screen bolt count and planet. Open a PowerShell terminal in the fork's project root, then:
+With RC2 **actively loaded in-game** (not the Collection menu), note your visible bolt count, health and current planet.
+
+Use PowerShell in the fork's repository root (or fetch the `scripts/probe-rc2-bcus98282.ps1` script from the branch). No npm installation or native addon build is needed for this probe:
 
 ```powershell
-npm install --ignore-scripts
-# Build memoryjs separately if necessary, as described in the upstream setup.
-# Find RPCS3's actual PID using Task Manager or:
+cd "C:\Project\RatchetHax"
 Get-Process rpcs3 | Select-Object Id, ProcessName
-
-node scripts/probe-rc2-bcus98282.js <PID>
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\probe-rc2-bcus98282.ps1" -ProcessId <ACTUAL_PID>
 ```
 
-Replace `<PID>` with the numeric PID (without angle brackets). This script probes a small, fixed set of **NPUA80644 candidate** addresses using explicit big-endian reads. It does not call any memory-writing APIs. Do not treat the readings as valid just because a number appears.
+Replace `<ACTUAL_PID>` with the numeric process ID (omit angle brackets). This probe requests only `PROCESS_VM_READ` and limited query permissions, calls Windows `ReadProcessMemory` directly and verifies that **all requested bytes were read**. Unlike the npm `memoryjs` probe, it reports explicit Windows errors for failed reads and interprets 32-bit game values as big-endian.
 
-Record the actual in-game value and the corresponding diagnostic value for **bolts, health/Nanotech and planet**. Ideally repeat with *two distinct known bolt counts* after ordinary gameplay changes, while still not writing through the trainer. These comparisons will help establish whether an offset is correct.
+If this repo is just an older zip copy, download the new script from the fork's development branch before running it.
 
-**Technical caveat:** The original `memoryjs@3.5.1` build emitted native C++ pointer-truncation warnings on x64. The emulator memory addresses used here exceed 32 bits (for example, `0x301329A90`). Before trusting any memory results or introducing writes, verify whether the native addon preserves full 64-bit addresses correctly. A successful build and an open RPCS3 process do not prove correct memory access. If the probe fails or native code crashes, stop and share the result instead of repeatedly running it.
+The original `scripts/probe-rc2-bcus98282.js` is retained for comparison only; it uses the native memoryjs module whose `readMemory` returns values without validating whether the Windows read actually succeeded. **Prefer the PowerShell probe** to distinguish unmapped memory from incorrect or stale game values.
+
+Compare results with actual in-game data. A successful read does not mean the address belongs to RC2: confirm at least two different legitimate bolt counts after ordinary gameplay changes before considering an address verified. Do not enable trainer writes.
 
 ## Next steps (not yet implemented)
 
