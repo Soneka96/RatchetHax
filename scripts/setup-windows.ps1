@@ -18,13 +18,30 @@ try {
     Write-Host 'RatchetHax Windows setup' -ForegroundColor Cyan
     Write-Host "Project: $root"
 
-    if (-not (Get-Command node.exe -ErrorAction SilentlyContinue)) {
+    $nodeCommand = Get-Command node.exe -ErrorAction SilentlyContinue
+    if (-not $nodeCommand) {
         throw 'Node.js not found on PATH.'
     }
-    if (-not (Get-Command npm.cmd -ErrorAction SilentlyContinue)) {
-        throw 'npm.cmd not found on PATH.'
+    $nodeExecutable = $nodeCommand.Source
+
+    # npm.cmd need not be on PATH (for example with some Windows Node version managers).
+    # Prefer invoking the npm CLI bundled beside the selected node.exe directly.
+    $npmCli = Join-Path (Split-Path -Parent $nodeExecutable) 'node_modules\npm\bin\npm-cli.js'
+    if (Test-Path -LiteralPath $npmCli) {
+        $npmRunner = $nodeExecutable
+        $npmPrefix = @($npmCli)
+        Write-Host "npm CLI: $npmCli"
+    } else {
+        $npmCommand = Get-Command npm.cmd -ErrorAction SilentlyContinue
+        if (-not $npmCommand) {
+            throw "Could not find npm-cli.js alongside node.exe or npm.cmd on PATH. Node path: $nodeExecutable"
+        }
+        $npmRunner = $npmCommand.Source
+        $npmPrefix = @()
+        Write-Host "npm command: $npmRunner"
     }
-    $nodeVersion = (& node.exe -p "process.versions.node").Trim()
+
+    $nodeVersion = (& $nodeExecutable -p "process.versions.node").Trim()
     Assert-Exit 'Node.js version check'
     if ($nodeVersion -ne '18.20.8') {
         Write-Warning "Node.js $nodeVersion detected. The verified local native build used 18.20.8; other versions are unverified."
@@ -57,7 +74,7 @@ try {
     if (-not $SkipInstall) {
         Write-Host 'Installing dependencies with native install scripts disabled...' -ForegroundColor Cyan
         Write-Host 'If EPERM occurs, close processes locking node_modules and retry.'
-        & npm.cmd install --ignore-scripts --no-audit
+        & $npmRunner @npmPrefix install --ignore-scripts --no-audit
         Assert-Exit 'npm install --ignore-scripts'
     }
 
@@ -68,16 +85,16 @@ try {
     Push-Location $addonDirectory
     try {
         Write-Host 'Building memoryjs x64 directly...' -ForegroundColor Cyan
-        & npm.cmd run build64
+        & $npmRunner @npmPrefix run build64
         Assert-Exit 'memoryjs build64'
     } finally {
         Pop-Location
     }
 
     Write-Host 'Smoke-testing native addon loading...' -ForegroundColor Cyan
-    & node.exe -e "const m = require('./node_modules/memoryjs'); if(typeof m.readMemory !== 'function') process.exit(2); console.log('memoryjs loaded successfully');"
+    & $nodeExecutable -e "const m = require('./node_modules/memoryjs'); if(typeof m.readMemory !== 'function') process.exit(2); console.log('memoryjs loaded successfully');"
     Assert-Exit 'memoryjs smoke test'
-    & node.exe --check trainer.js
+    & $nodeExecutable --check trainer.js
     Assert-Exit 'trainer syntax check'
     Write-Host 'Install verification succeeded. Game memory compatibility remains UNVERIFIED.' -ForegroundColor Green
     Write-Host 'Do not use the original trainer write functions with Collection BCUS98282.'
