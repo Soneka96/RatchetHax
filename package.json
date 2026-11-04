@@ -1,6 +1,7 @@
 {
     "scripts": {
-        "trainer": "node --no-warnings trainer.js"
+        "trainer": "node --no-warnings trainer.js",
+        "setup:windows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/setup-windows.ps1"
     },
     "dependencies": {
         "chalk": "^5.2.0",
