@@ -1,7 +1,7 @@
 /*
  * Bolt-only profile for Ratchet & Clank 2: Going Commando inside the PS3
- * Collection. The address was validated for the local RPCS3 mapping recorded
- * below; other game fields are intentionally unsupported.
+ * Collection. The host address is confirmed for the logged RPCS3 base;
+ * other game fields remain unsupported.
  */
 
 export default {
