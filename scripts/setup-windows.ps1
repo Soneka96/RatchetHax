@@ -62,16 +62,51 @@ try {
     }
     Write-Warning 'Node 18 is EOL. Only use it as a temporary legacy compatibility environment.'
 
-    if (-not (Get-Command py.exe -ErrorAction SilentlyContinue)) {
-        throw 'Python Launcher py.exe not found. Install Python 3.12.'
+    # Prefer Python 3.12; node-gyp 10.1.0 can also use Python 3.11.
+    # The Windows Python launcher may be absent, a shim, or return noisy output.
+    # Verify interpreter path and version instead of blindly taking first output line.
+    $pythonCandidates = @(
+        @{ Launcher = 'py.exe'; Prefix = @('-3.12') },
+        @{ Launcher = 'py.exe'; Prefix = @('-3.11') },
+        @{ Launcher = (Join-Path $env:LOCALAPPDATA 'Python\pythoncore-3.12-64\python.exe'); Prefix = @() },
+        @{ Launcher = (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe'); Prefix = @() },
+        @{ Launcher = (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python311\python.exe'); Prefix = @() },
+        @{ Launcher = 'python.exe'; Prefix = @() }
+    )
+
+    $pythonExe = $null
+    $pythonVersion = $null
+    foreach ($candidate in $pythonCandidates) {
+        $cmd = Get-Command $candidate.Launcher -ErrorAction SilentlyContinue
+        if (-not $cmd) { continue }
+        $commandArgs = @($candidate.Prefix) + @(
+            '-c',
+            'import sys; print("RH_PY_PATH=" + sys.executable); print("RH_PY_VERSION=%d.%d" % sys.version_info[:2])'
+        )
+        try {
+            $result = @(& $cmd.Source @commandArgs 2>$null)
+            $exitCode = $LASTEXITCODE
+            if ($exitCode -ne 0) { continue }
+            $pathLine = @($result | Where-Object { $_ -is [string] -and $_.StartsWith('RH_PY_PATH=') } | Select-Object -Last 1)
+            $versionLine = @($result | Where-Object { $_ -is [string] -and $_.StartsWith('RH_PY_VERSION=') } | Select-Object -Last 1)
+            if ($pathLine.Count -eq 0 -or $versionLine.Count -eq 0) { continue }
+            $resolvedPath = $pathLine[-1].Substring('RH_PY_PATH='.Length).Trim()
+            $resolvedVersion = $versionLine[-1].Substring('RH_PY_VERSION='.Length).Trim()
+            if ($resolvedVersion -in @('3.12', '3.11') -and (Test-Path -LiteralPath $resolvedPath -PathType Leaf)) {
+                $pythonExe = $resolvedPath
+                $pythonVersion = $resolvedVersion
+                break
+            }
+        } catch {
+            # Probe next candidate.
+        }
     }
-    $pythonExe = (& py.exe -3.12 -c 'import sys; print(sys.executable)' 2>$null | Select-Object -First 1)
-    if ($LASTEXITCODE -ne 0 -or -not $pythonExe -or -not (Test-Path $pythonExe)) {
-        throw 'Python 3.12 not found. Install it and retry.'
+    if (-not $pythonExe) {
+        throw 'No compatible Python interpreter detected (3.12 preferred, 3.11 accepted). Run "py -0p" and "where.exe python" to list installed interpreters; check for Python 3.12/3.11 before installing anything.'
     }
-    $env:npm_config_python = "$pythonExe"
-    $env:PYTHON = "$pythonExe"
-    Write-Host "Python: $pythonExe"
+    $env:npm_config_python = $pythonExe
+    $env:PYTHON = $pythonExe
+    Write-Host ("Python {0}: {1}" -f $pythonVersion, $pythonExe)
 
     $vswhere = Join-Path ([Environment]::GetEnvironmentVariable('ProgramFiles(x86)')) 'Microsoft Visual Studio\Installer\vswhere.exe'
     if (-not (Test-Path $vswhere)) {
