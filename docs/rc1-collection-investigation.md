@@ -6,8 +6,9 @@ This investigation covers only bolt reading and, if separately validated,
 bolt setting for Ratchet & Clank 1 inside the PS3 Collection. The standalone
 RC1 address in `games/rc1_ps3_npua80643.js` is an unverified candidate. The new
 `diagnostics/rc1-collection.js` probe reads that candidate only and requests
-`PROCESS_VM_READ`; it never writes process memory. No Collection RC1 trainer
-profile or write path is enabled by this investigation step.
+`PROCESS_VM_READ`; it never writes process memory. The Collection RC1 trainer
+profile contains only the tested bolt field, and Set Bolts uses the separate
+checked Win32 backend documented below. No other game actions are exposed.
 
 ## Observed session
 
@@ -79,6 +80,28 @@ not paired with a fresh HUD capture.
 Snapshot files were kept in the local temporary directory. Their capture
 metadata and checksums are in the adjacent `.meta.json` sidecars.
 
+## Memory backend and trainer result
+
+The `memoryjs@3.5.1` read path preserved the full host address when reading
+`0x3009BC3A0` in this x64 RPCS3 session. Its native read and write methods do
+not expose the Win32 success flag or transferred-byte count, so the RC1
+trainer now uses a separate checked Win32 backend for full 4-byte reads,
+writes, and post-write verification. RC2 continues to use its existing
+memoryjs path.
+
+The first RC1 trainer launch failed before reading because PowerShell formatted
+the returned address with uppercase hex while the JS wrapper compared it to a
+lowercase request. The wrapper now compares normalized case. After that fix,
+the live trainer backend read `99,453` at `0x3009BC3A0` successfully; the full
+Node suite passed (58 tests), and the Pester suites passed (29 tests).
+
+The RC1 trainer currently starts `powershell.exe` synchronously for each bolt
+read or write so it can check Win32 success and byte counts; the user observed
+about a two-second delay when opening the RC1 menu. RC2 uses its existing
+in-process `memoryjs` path. In the bolt-only menu, Refresh and Set Bolts return
+to the bolt options; Quit closes the process handle and exits the trainer, as
+the requested Exit action specifies.
+
 Candidate B is confirmed for the tested session by two normal HUD transitions,
 the targeted write/read-back behavior, and the user's HUD confirmation. It is
 enabled in the RC1 bolt-only trainer profile at the user's direction. The
@@ -92,15 +115,13 @@ profile while RC2 is active. Select the RC1 profile only while Collection Game
 1 is running. Restart reproduction and the active PPU executable/build remain
 unverified; the confirmed address is limited to the tested session.
 
-## Next read-only evidence required
+## Remaining verification
 
-Follow the [RC1 Collection capture runbook](rc1-collection-runbook.md) while
-the selected game is visibly in normal RC1 gameplay. Capture two different
-HUD bolt counts, scan the corresponding memory snapshots, then repeat after
-restarting RPCS3 and relaunching RC1. Record all candidates, including mirrors
-and rejected matches. Do not copy RC2 base addresses, segment ranges, or
-offsets into this investigation.
-
-If these observations do not identify a reproducible authoritative bolt
-field, stop at read-only research. If they do, a targeted write experiment on a
-backed-up test save still requires explicit user approval before it is run.
+The bolt field and targeted write are verified for this session. Restart
+reproduction, the active PPU executable/build identity, and a PPU-log-confirmed
+segment range remain unverified. The user chose explicit profile selection
+with one Collection game open at a time instead of an automatic runtime
+subgame guard. Because the two games share outer title ID `BCUS98282`, the
+trainer cannot prevent a user from selecting the RC1 profile while RC2 is
+active. Keep PR #1 in draft and do not merge until the remaining verification
+and review are complete.

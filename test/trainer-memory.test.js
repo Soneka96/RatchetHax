@@ -18,7 +18,7 @@ test('reads Collection bolts through the checked 64-bit PowerShell backend', () 
                 stdout: JSON.stringify({
                     status: 'read_complete',
                     processId,
-                    address: '0x00000003009bc3a0',
+                    address: '0x00000003009BC3A0',
                     requestedBytes: 4,
                     bytesRead: 4,
                     value: 99453
@@ -50,7 +50,7 @@ test('writes only the requested 32-bit value and returns its verified read-back'
                 stdout: JSON.stringify({
                     status: 'write_complete',
                     processId,
-                    address: '0x00000003009bc3a0',
+                    address: '0x00000003009BC3A0',
                     requestedBytes: 4,
                     bytesWritten: 4,
                     beforeValue: 99453,

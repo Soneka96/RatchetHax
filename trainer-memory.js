@@ -63,7 +63,8 @@ function invokeCollectionBoltMemory({ mode, processId, address, value, runComman
         error.report = report;
         throw error;
     }
-    if (report.processId !== normalizedPid || report.address !== normalizedAddress || report.requestedBytes !== 4) {
+    const returnedAddress = typeof report.address === 'string' ? report.address.toLowerCase() : '';
+    if (report.processId !== normalizedPid || returnedAddress !== normalizedAddress || report.requestedBytes !== 4) {
         throw new Error('Collection memory result does not match the requested process, address, and byte count.');
     }
     if (mode === 'read' && (report.bytesRead !== 4 || !Number.isSafeInteger(report.value) || report.value < 0 || report.value > MAX_UINT32)) {

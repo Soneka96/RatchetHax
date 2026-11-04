@@ -27,7 +27,6 @@ The local RPCS3 log shows the outer disc title as `BCUS98282`, launching its
 This explains why the Collection can retain the standalone-looking RC2 save
 namespace while having a separate subgame executable. The matching app name
 and save prefix do not prove that the embedded `RC2.ppu.self` has the same
-memory layout as the standalone NPUA80644 release.
 
 ## Address mapping and confirmed bolt field
 
@@ -81,10 +80,10 @@ standalone profile's known planet IDs 0–26.
 The internal `NPUA80644` identity and save namespace are confirmed, but no
 byte-for-byte comparison of the Collection's `RC2.ppu.self` against the
 standalone executable was performed. The broader reason the remaining offsets
-differ is unresolved. Collection games 1 and 3 have no profiles yet; the
-metadata shape in the bolt-only profile can be reused when those games are
-investigated. Do not add unverified fields to the BCUS98282 profile or enable
-trainer actions for them.
+differ is unresolved. Collection Game 1 now has a bolt-only profile based on
+its separate investigation; Collection Game 3 remains unsupported. Do not add
+unverified fields to the BCUS98282 profiles or expose unsupported trainer
+actions.
 
 The [read-only diagnostics runbook](rc2-collection-runbook.md) documents the
 snapshot and diff procedure. Keep snapshots local unless they are deliberately
