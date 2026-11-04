@@ -50,7 +50,9 @@ if (!pidText || !Number.isSafeInteger(pid) || pid <= 0) {
                 continue;
             }
             const [address, type] = descriptor;
-            const resolvedType = `${type.toUpperCase()}_BE`;
+            const resolvedType = (type.toLowerCase() === 'uint8' || type.toLowerCase() === 'int8')
+                ? type.toUpperCase()
+                : `${type.toUpperCase()}_BE`;
             const memoryType = memoryjs[resolvedType];
             if (memoryType == null) {
                 console.log(`${label}: unsupported data type ${resolvedType}`);
