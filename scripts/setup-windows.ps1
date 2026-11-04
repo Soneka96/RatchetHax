@@ -42,7 +42,7 @@ try {
     $env:PYTHON = "$pythonExe"
     Write-Host "Python: $pythonExe"
 
-    $vswhere = Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Microsoft Visual Studio\Installer\vswhere.exe'
+    $vswhere = Join-Path ([Environment]::GetEnvironmentVariable('ProgramFiles(x86)')) 'Microsoft Visual Studio\Installer\vswhere.exe'
     if (-not (Test-Path $vswhere)) {
         throw 'vswhere.exe not found. Install VS 2022 Build Tools with Desktop development with C++.'
     }
