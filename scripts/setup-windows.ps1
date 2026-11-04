@@ -24,25 +24,39 @@ try {
     }
     $nodeExecutable = $nodeCommand.Source
 
-    # npm.cmd need not be on PATH (for example with some Windows Node version managers).
-    # Prefer invoking the npm CLI bundled beside the selected node.exe directly.
-    $npmCli = Join-Path (Split-Path -Parent $nodeExecutable) 'node_modules\npm\bin\npm-cli.js'
-    if (Test-Path -LiteralPath $npmCli) {
+    $nodeVersion = (& $nodeExecutable -p "process.versions.node").Trim()
+    Assert-Exit 'Node.js version check'
+
+    # Some Windows Node managers expose node.exe through a .nodejs shim.
+    # npm-cli.js is then under installs\v<version>, not beside the shim.
+    # Resolve the actual binary AND the installed version directory first.
+    $realNodeExecutable = (& $nodeExecutable -p "require('fs').realpathSync(process.execPath)").Trim()
+    Assert-Exit 'Node.js actual-path lookup'
+    $nodeDirectory = Split-Path -Parent $nodeExecutable
+    $realNodeDirectory = Split-Path -Parent $realNodeExecutable
+    $versionManagerRoot = Split-Path -Parent $nodeDirectory
+    $npmCandidates = @(
+        (Join-Path $nodeDirectory 'node_modules\npm\bin\npm-cli.js')
+        (Join-Path $realNodeDirectory 'node_modules\npm\bin\npm-cli.js')
+        (Join-Path $versionManagerRoot ("installs\v{0}\node_modules\npm\bin\npm-cli.js" -f $nodeVersion))
+    )
+    $npmCli = $npmCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+    if ($npmCli) {
         $npmRunner = $nodeExecutable
         $npmPrefix = @($npmCli)
         Write-Host "npm CLI: $npmCli"
     } else {
-        $npmCommand = Get-Command npm.cmd -ErrorAction SilentlyContinue
-        if (-not $npmCommand) {
-            throw "Could not find npm-cli.js alongside node.exe or npm.cmd on PATH. Node path: $nodeExecutable"
+        # Fallback to whichever npm launcher PowerShell can actually run.
+        # npm.ps1 works here too: this setup is launched with ExecutionPolicy Bypass.
+        $npmCommand = Get-Command npm -ErrorAction SilentlyContinue
+        if (-not $npmCommand -or $npmCommand.CommandType -notin @('Application', 'ExternalScript')) {
+            throw "npm not found. Checked actual Node location and version-manager install for Node $nodeVersion. Confirm that npm is installed for the selected Node version."
         }
         $npmRunner = $npmCommand.Source
         $npmPrefix = @()
-        Write-Host "npm command: $npmRunner"
+        Write-Host "npm launcher: $npmRunner"
     }
 
-    $nodeVersion = (& $nodeExecutable -p "process.versions.node").Trim()
-    Assert-Exit 'Node.js version check'
     if ($nodeVersion -ne '18.20.8') {
         Write-Warning "Node.js $nodeVersion detected. The verified local native build used 18.20.8; other versions are unverified."
     }
