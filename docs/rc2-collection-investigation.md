@@ -1,111 +1,84 @@
-# RC2 Collection memory compatibility investigation
+# RC2 in the PS3 Collection (BCUS98282): compatibility findings
 
-## Scope
+## Scope and safety
 
-This note investigates whether the existing Ratchet & Clank 2 PS3 profile can be
-trusted for RC2 running as part of the PS3 Collection (`BCUS98282`) in RPCS3.
-It does not add a Collection profile or enable memory writes. All existing
-`NPUA80644` values are treated as unverified candidates for the Collection.
+This investigation compares the standalone RC2 profile (`NPUA80644`) with
+Ratchet & Clank 2 launched from the three-game PS3 Collection (`BCUS98282`). The
+diagnostic and snapshot tools in this repository are read-only. They do not
+write process memory or modify a save.
 
-## Findings confirmed from the local code
+During this user-authorized investigation, a separate one-off memory write was
+used to validate the bolt candidate. It changed live RAM only; the user
+confirmed the HUD value. This was a session-specific experiment, not a trainer
+feature or permission to write other Collection addresses.
 
-- The only RC2 PS3 profile in this checkout is
-  [`games/rc2_ps3_npua80644.js`](../games/rc2_ps3_npua80644.js). It identifies
-  `NPUA80644` in its comment, sets `bigEndian: true`, and stores addresses such
-  as `0x301329A90` as JavaScript numeric literals. The local Collection address
-  profile and the diagnostic probes mentioned in the task brief are not present
-  in the files inspected in this checkout.
-- [`Game.js`](../Game.js) passes profile addresses to `memoryjs.readMemory` and
-  sets the addon's scalar data type constants to big-endian variants for this
-  profile. It returns the addon's result directly; it has no read-status or
-  byte-count channel.
-- The installed dependency is `memoryjs` 3.5.1, as recorded in
-  `package-lock.json`. Its native `openProcess` implementation calls
-  `OpenProcess(PROCESS_ALL_ACCESS, ...)`, so the trainer does not request
-  read-only access.
-- For this profile's big-endian fields, the `memoryjs` JavaScript wrapper
-  routes scalar reads through `readBuffer` and decodes the returned buffer with
-  Node's big-endian buffer methods. The native buffer path ignores
-  `ReadProcessMemory`'s Boolean result and byte count, then returns a buffer of
-  the requested length. This means the path used by fields such as bolts
-  cannot distinguish a valid zero from an unsuccessful or incomplete read.
-  Non-big-endian scalar fields, such as the profile's `uint8` item and planet
-  IDs, use the native scalar template: it passes a null byte-count pointer,
-  ignores the API result, and leaves its destination uninitialized before the
-  call. Neither path provides a reliable read-status signal to `Game.js`.
-- The native address argument is accepted as a JavaScript `Number`, converted
-  to `Int64Value`, stored as `DWORD64`, and cast to `LPVOID` at the Windows API
-  call. The current profile's `0x3...` addresses are far below JavaScript's
-  exact-integer limit of `2^53`, so they are exactly representable as Numbers.
-  This rules out simple 32-bit truncation inside JavaScript Number storage for
-  these constants, but does not establish correctness for arbitrary 64-bit
-  addresses or for a 32-bit native build. The checked-in Windows setup guide
-  builds the x64 addon; that is relevant to the pointer cast but is not evidence
-  that any game address is correct.
-- The local `CheatEngineTables` files inspected contain a PS2 RC2 table, not a
-  live-memory map for the PS3 Collection. The public `NPUA80644` cheat material
-  found during this investigation concerns save-data offsets, not RPCS3 process
-  virtual addresses; it cannot validate this profile.
+## How this Collection boots RC2
 
-## RPCS3 address mapping
+Sony describes the Collection as containing the first three games: Ratchet &
+Clank, Going Commando, and Up Your Arsenal. [PlayStation's Collection announcement](https://blog.playstation.com/2012/07/16/ratchet-clank-collection-hits-august-28th-with-sly-cooper-demo/)
 
-RPCS3's current [`vm.cpp`](https://github.com/RPCS3/rpcs3/blob/master/rpcs3/Emu/Memory/vm.cpp)
-reserves its emulated memory at runtime. Its reservation helper tries 4 GiB
-steps starting at `0x3_0000_0000` and continues searching higher addresses;
-the guest memory base is the address returned by that search. This supports
-the hypothesis that a fixed `0x300000000 + guest address` calculation is not
-universally valid. It does **not** prove which base a particular Windows RPCS3
-process selected. That must be observed from the running process before any
-derived host address can be trusted.
+The local RPCS3 log shows the outer disc title as `BCUS98282`, launching its
+`EBOOT.BIN`. When RC2 is selected, RPCS3 directly boots
+`PS3_GAME/USRDIR/RC2.ppu.self`; the outer Collection serial remains
+`BCUS98282`. The running RC2 code reports the internal app/SKU identity
+`NPUA80644` and uses save directory `NPUA80644_RC2_SAVEDATA_A`.
 
-## Read API requirements
+This explains why the Collection can retain the standalone-looking RC2 save
+namespace while having a separate subgame executable. The matching app name
+and save prefix do not prove that the embedded `RC2.ppu.self` has the same
+memory layout as the standalone NPUA80644 release.
 
-Microsoft documents that `ReadProcessMemory` requires a handle with
-`PROCESS_VM_READ`, returns a success flag, accepts an output pointer for the
-number of bytes transferred, and exposes extended failure information through
-`GetLastError`. It also states that the requested region must be accessible.
-The current `memoryjs` path discards the success and byte-count results, so it
-does not meet the diagnostics requirement. A replacement probe should request
-only the required read permission and report the address, requested/returned
-byte counts, success state, and Windows error code. A decoded value should be
-emitted only after a complete successful read.
+## Address mapping and confirmed bolt field
 
-Source: [Microsoft `ReadProcessMemory` documentation](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-readprocessmemory).
+RPCS3's [memory implementation](https://github.com/RPCS3/rpcs3/blob/master/rpcs3/Emu/Memory/vm.cpp)
+reserves the guest memory base at runtime. In the user's active RPCS3 session,
+the log recorded `vm::g_base_addr = 0x0000000300000000`. That is the expected
+base for the existing profile's `0x3...` host addresses in this session, so a
+shifted RPCS3 base does not explain the observed bolt mismatch here.
 
-## Findings that remain hypotheses
+The RC2 PPU log reports a data segment beginning at guest address `0x012E0000`
+with memory size `0x00CF3990`. The candidate bolt address found by differential
+scanning is inside this segment:
 
-These are plausible explanations, not established root causes:
+| Role | Guest address | Host address | Evidence |
+| --- | ---: | ---: | --- |
+| Bolt field candidate | `0x01329E80` | `0x301329E80` | Changed with HUD bolts and passed the live write check |
+| Mirrored bolt candidate | `0x0157E080` | `0x30157E080` | Followed the first value after the game updated |
+| Old standalone profile candidate | `0x01329A90` | `0x301329A90` | Read zero while the HUD showed over 244,000 bolts |
 
-1. RPCS3 may have selected a guest-memory host base other than the assumed
-   `0x300000000` base.
-2. The standalone `NPUA80644` values may not match the RC2 executable/build
-   inside `BCUS98282`.
-3. Failed or short native reads may currently appear as values because the
-   addon suppresses the Win32 read result.
-4. A candidate may use the wrong type, byte order, or game-state interpretation.
-5. The selected process may be RPCS3 while RC2 is not in a state where the
-   candidate fields are populated.
+Two complete, read-only snapshots matched both candidate locations to a normal
+HUD change from 244,012 to 244,016. Under the user's explicit authorization, a
+separate test then changed the first candidate from 243,866 to 244,866. The
+value read back, the second location synchronized to 244,866, and the user
+confirmed that the HUD showed 244,866. This confirms `0x301329E80` as the bolt
+field for the tested RC2 Collection session; `0x30157E080` behaves like a
+mirror. The old NPUA80644 bolt address is not correct for this session.
 
-The existing evidence does not establish which of these explains the reported
-implausible readings. Attaching to `rpcs3.exe`, or observing a plausible-looking
-number, is not sufficient proof of Collection compatibility.
+The scan and read APIs verified full byte counts. A successful read only means
+the address was readable; semantic validation came from the before/after HUD
+counts and the user's confirmation.
 
-## Evidence still needed
+## Remaining field and build status
 
-Collection compatibility needs repeatable observations from the user's Windows
-11/RPCS3 session: record the RPCS3 version and loaded game identity, visible
-bolts and planet, then collect diagnostics during play and again after a
-legitimate bolt-count change. The probe must show complete successful reads
-for each field and correlate the bolt candidate with both visible observations.
-Health, equipped item, planet, weapon, and unlock candidates require separate
-gameplay checks before they can be described as verified.
+Only the bolt field has been validated in the Collection. The health,
+multiplier, planet ID, equipped item, weapon, gadget, and unlock candidates from
+the standalone profile remain unsupported. In the captured session, the old
+health and multiplier candidates returned zero while the HUD showed 40/40
+health and a ×12 multiplier; the planet candidate returned ID 46, outside the
+standalone profile's known planet IDs 0–26.
 
-Until those checks and address provenance are available, `BCUS98282` remains
-unsupported and read-only. No Collection address profile is added here.
+The internal `NPUA80644` identity and save namespace are confirmed, but no
+byte-for-byte comparison of the Collection's `RC2.ppu.self` against the
+standalone executable was performed. The broader reason the remaining offsets
+differ is unresolved. Do not create a populated `BCUS98282` profile or enable
+trainer writes for the other fields based on these findings.
+
+The [read-only diagnostics runbook](rc2-collection-runbook.md) documents the
+snapshot and diff procedure. Keep snapshots local unless they are deliberately
+shared; they contain raw game memory from the selected range.
 
 ## Sources
 
-- RPCS3 source: [`rpcs3/Emu/Memory/vm.cpp`](https://github.com/RPCS3/rpcs3/blob/master/rpcs3/Emu/Memory/vm.cpp)
-- `memoryjs` upstream project: [Rob--/memoryjs](https://github.com/Rob--/memoryjs). The implementation details above were checked against the locally installed 3.5.1 source referenced by `package-lock.json`.
-- Windows API: [Microsoft `ReadProcessMemory` documentation](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-readprocessmemory)
-- Game identifier reference: [NPUA80644 save-code listing](https://www.save-editor.com/tools_original/wse_ps3_save_editor_code_title.html?id=NPUA80644), which describes save-data patches and is **not** used as live-memory address evidence.
+- [PlayStation Blog: Ratchet & Clank Collection announcement](https://blog.playstation.com/2012/07/16/ratchet-clank-collection-hits-august-28th-with-sly-cooper-demo/)
+- [RPCS3 guest-memory implementation](https://github.com/RPCS3/rpcs3/blob/master/rpcs3/Emu/Memory/vm.cpp)
+- [Microsoft `ReadProcessMemory` documentation](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-readprocessmemory)

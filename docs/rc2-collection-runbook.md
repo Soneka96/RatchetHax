@@ -1,110 +1,91 @@
-# RC2 Collection read-only diagnostics runbook
+# RC2 Collection read-only snapshot and diff runbook
 
-This probe gathers repeatable memory-read observations for Ratchet & Clank 2
-running in the PS3 Collection (`BCUS98282`) under RPCS3. It uses only the
-existing `NPUA80644` profile values as **unverified candidates**. The report
-does not identify the loaded game build, certify an address, or enable writes.
+Use this workflow to compare live RC2 Collection memory with HUD observations.
+The snapshot reader and diff scanner do not write process memory. The only
+address profile currently validated for this Collection session is the bolt
+field documented in the [investigation report](rc2-collection-investigation.md).
 
-## What the probe does
+## Capture a snapshot
 
-- Finds running `rpcs3.exe` processes. It selects the only match automatically;
-  if there are several, it prints their process IDs and asks for `--pid` on the
-  next invocation.
-- Opens the selected process with `PROCESS_VM_READ` only.
-- Reads each candidate through Windows `ReadProcessMemory`, recording its
-  success flag, requested and returned byte counts, and Windows error code.
-- Decodes a value only after the read succeeds and returns the full requested
-  byte count. Values use the type and byte order declared by the source profile.
-- Emits JSON containing the process identity, exact candidate address, status,
-  decoded value when valid, and a clear unverified label. Fields include bolts,
-  nanotech/health, planet and equipped-item IDs, raritanium, multiplier, weapon
-  ammo and unlock flags, gadget unlock flags, and item unlock flags.
+Use 64-bit Windows PowerShell from the repository root. Confirm RC2 is loaded
+inside the Collection, then record the visible bolt count. If multiple RPCS3
+processes are running, use the PID for the one running the Collection:
 
-The probe reads the absolute addresses already listed in the standalone profile;
-it does not calculate a host address by adding `0x300000000`. RPCS3 may reserve
-its memory at a different base. `targetBuildStatus` remains `unverified` in every
-report, and successful attachment or a plausible value is not proof of support.
+```powershell
+Get-Process rpcs3 | Select-Object Id, Path
+$rpcs3Pid = 15324 # Replace with the selected PID.
+```
 
-## Collect two observations
+For the tested RPCS3 build, the log showed guest base `0x300000000` and the
+active RC2 PPU data segment at guest start `0x012E0000`, length `13580688`
+bytes. Recheck `RPCS3.log` after a build or game change; pass the logged values
+for that session. The snapshot command requests `PROCESS_VM_READ` only, reads in
+chunks, checks every success flag and byte count, then creates a `.bin` snapshot
+and `.meta.json` sidecar. It refuses to overwrite either file.
 
-Use 64-bit Windows PowerShell and Node.js from the repository root. The current
-Windows setup notes document Node.js 18.20.8 for this checkout.
+```powershell
+$before = Join-Path $env:TEMP 'RatchetHax-RC2-before.bin'
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\diagnostics\rc2-read-process.ps1 `
+  -Snapshot -ProcessId $rpcs3Pid `
+  -GuestBase 0x300000000 -GuestStart 0x012E0000 -SnapshotLength 13580688 `
+  -ChunkSize 65536 -SnapshotPath $before -HudBolts 244012
+```
 
-1. Start RPCS3 and load RC2 from the Collection. In active gameplay, note the
-   RPCS3 version, the game title/build shown by RPCS3, the visible bolt count,
-   and the planet. Keep a short observation note with the output file.
-2. If more than one RPCS3 process is running, list them and choose the PID for
-   the emulator instance running the game:
+Use the exact HUD count you observed instead of `244012`. Choose a new filename
+for every capture.
 
-   ```powershell
-   Get-Process rpcs3 | Select-Object Id, Path
-   ```
+Collect or spend bolts through ordinary gameplay, record the new HUD count, and
+capture the second snapshot to a different path:
 
-3. Capture the first JSON observation. With one RPCS3 process, omit `--pid`:
+```powershell
+$after = Join-Path $env:TEMP 'RatchetHax-RC2-after.bin'
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\diagnostics\rc2-read-process.ps1 `
+  -Snapshot -ProcessId $rpcs3Pid `
+  -GuestBase 0x300000000 -GuestStart 0x012E0000 -SnapshotLength 13580688 `
+  -ChunkSize 65536 -SnapshotPath $after -HudBolts 244016
+```
 
-   ```powershell
-   node .\diagnostics\rc2-collection.js --out .\rc2-collection-observation-1.json
-   ```
+## Scan for the changing value
 
-   `--out` creates a new file and refuses to overwrite an existing observation.
+When both snapshots have metadata sidecars, the scanner reads their guest range
+and HUD values from those files:
 
-   With multiple instances, pass the selected PID:
+```powershell
+node .\diagnostics\rc2-memory-diff.js --before $before --after $after
+```
 
-   ```powershell
-   node .\diagnostics\rc2-collection.js --pid 1234 --out .\rc2-collection-observation-1.json
-   ```
+For older raw snapshots without sidecars, pass the metadata explicitly:
 
-4. Pick up or spend bolts through normal gameplay. Note the new visible count
-   and planet, then capture a second observation using the same process:
+```powershell
+node .\diagnostics\rc2-memory-diff.js `
+  --before (Join-Path $env:TEMP 'RatchetHax-RC2-BCUS98282-244012.bin') `
+  --after (Join-Path $env:TEMP 'RatchetHax-RC2-BCUS98282-244016.bin') `
+  --guest-base 0x300000000 --guest-start 0x012E0000 `
+  --before-hud 244012 --after-hud 244016
+```
 
-   ```powershell
-   node .\diagnostics\rc2-collection.js --pid 1234 --out .\rc2-collection-observation-2.json
-   ```
+The scanner reports every aligned big-endian 32-bit location that held the
+first HUD value in the before snapshot and the second in the after snapshot. A
+match is a candidate; if several locations match, repeat with a different HUD
+change and observe whether the same location tracks it. Do not treat a readable
+address, a mirror, or a plausible value as proof by itself.
 
-5. Send both JSON files and the two observation notes together. Include the
-   RPCS3 version and the Collection/game identity shown in RPCS3. Do not edit
-   either JSON file before sharing it; if you redact anything, say what changed.
-
-If the probe reports `no_rpcs3_process`, `selection_required`,
-`process_not_found`, `open_failed`, `failed`, or `partial`, preserve the output
-and its error code. Do not treat those results as game values. For comparisons,
-use only fields whose status is `complete`, and compare the bolt value to the
-visible count in both observations.
+The saved `244012 → 244016` comparison produced guest candidates `0x01329E80`
+and `0x0157E080`. Subsequent testing showed the first address at host
+`0x301329E80` drove the visible bolt value; the second followed it as a mirror.
+The old NPUA80644 bolt address `0x301329A90` remained zero. These findings apply
+to the tested RC2 Collection session; do not infer that the other standalone
+profile fields are valid.
 
 ## Automated checks
 
-From the repository root, run the JavaScript unit tests and the PowerShell
-Pester tests:
-
 ```powershell
-node --test test/diagnostics/rc2-memory.test.js test/diagnostics/rc2-collection.test.js
+node --test test/diagnostics/rc2-memory.test.js test/diagnostics/rc2-collection.test.js test/diagnostics/rc2-memory-diff.test.js
 Invoke-Pester -Script .\test\diagnostics\rc2-read-process.Tests.ps1
 ```
 
-The JavaScript tests use mocked process/read responses. The PowerShell tests
-mock process selection and Win32 calls; they do not attach to RPCS3.
-
-## Acceptance criteria
-
-The diagnostics can be considered reliable for further address investigation
-when all of the following hold:
-
-1. Process selection identifies the intended `rpcs3.exe` PID; multiple running
-   instances require an explicit PID.
-2. The opened handle requests `PROCESS_VM_READ` only. The probe contains no
-   process-memory write path.
-3. Every result preserves the exact source address and includes read success,
-   requested/returned byte counts, and the Windows error code on failure.
-4. Failed, short, missing, or inconsistent read results never produce decoded
-   values; a complete read of zero is reported as the valid number zero.
-5. The two gameplay observations show complete bolt reads that match the visible
-   bolt count and change consistently after the legitimate in-game change.
-6. RPCS3 version, loaded game identity, visible counts, and raw JSON outputs are
-   retained together so another person can reproduce the comparison.
-
-Meeting these criteria validates the diagnostic method and the bolt candidate
-for those recorded observations only. It does not verify health, planet,
-equipped-item, weapon, or unlock addresses, and it does not establish general
-`BCUS98282` support. Each field needs its own independent gameplay correlation.
-No `BCUS98282` profile should be populated and no game-memory writes should be
-enabled based on this probe alone.
+The automated tests use mocked process/read results and temporary snapshot
+files. They do not write game memory or attach to RPCS3. The normal capture and
+diff tools are read-only. No populated `BCUS98282` profile should be added for
+health, planet, equipped item, weapon, or unlock fields until those values are
+independently validated.
