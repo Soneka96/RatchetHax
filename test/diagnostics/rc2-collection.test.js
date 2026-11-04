@@ -65,6 +65,16 @@ test('builds labeled requests only from existing NPUA80644 profile entries', () 
     assert.ok(requests.every(request => request.verification.includes('unverified')));
 });
 
+test('accepts a different source profile label without changing the RC2 default', () => {
+    const request = buildCandidateRequests({ bigEndian: true, bolts: [0x3009B9CE0, 'int32'] }, {
+        sourceProfile: 'NPUA80643'
+    })[0];
+    const rc2Request = buildCandidateRequests(smallProfile)[0];
+
+    assert.equal(request.verification, 'unverified candidate copied from NPUA80643 profile');
+    assert.equal(rc2Request.verification, 'unverified candidate copied from NPUA80644 profile');
+});
+
 test('reports complete zero reads as values and does not decode failed or partial reads', () => {
     const report = runCollectionProbe({
         profile: smallProfile,
@@ -188,4 +198,20 @@ test('surfaces PowerShell launch and malformed-output failures', () => {
         ...request,
         runCommand: () => ({ stdout: 'not json', stderr: 'native failure', status: 1 })
     }).status, 'backend_error');
+});
+
+test('surfaces empty PowerShell output with stderr or process exit details', () => {
+    const withStderr = invokePowerShellReader({
+        requests: [],
+        runCommand: () => ({ stdout: '', stderr: 'reader failed', status: 1 })
+    });
+    const withoutStderr = invokePowerShellReader({
+        requests: [],
+        runCommand: () => ({ stdout: '', stderr: '', status: 7 })
+    });
+
+    assert.equal(withStderr.status, 'backend_error');
+    assert.equal(withStderr.message, 'reader failed');
+    assert.equal(withoutStderr.status, 'backend_error');
+    assert.equal(withoutStderr.message, 'PowerShell exited with code 7');
 });

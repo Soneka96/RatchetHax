@@ -8,7 +8,7 @@ import { byteLengthForType, decodeRead, formatAddress } from './rc2-memory.js';
 
 const scriptPath = fileURLToPath(new URL('./rc2-read-process.ps1', import.meta.url));
 
-function addCandidate(requests, profile, key, label, entry) {
+function addCandidate(requests, profile, key, label, entry, sourceProfile) {
     if (!Array.isArray(entry) || entry.length < 2 || entry[0] === null) return;
     const type = String(entry[1]).toLowerCase();
     requests.push({
@@ -18,28 +18,28 @@ function addCandidate(requests, profile, key, label, entry) {
         dataType: type,
         byteOrder: profile.bigEndian ? 'big' : 'little',
         requestedBytes: byteLengthForType(type),
-        verification: 'unverified candidate copied from NPUA80644 profile'
+        verification: `unverified candidate copied from ${sourceProfile} profile`
     });
 }
 
-export function buildCandidateRequests(profile = rc2Profile) {
+export function buildCandidateRequests(profile = rc2Profile, { sourceProfile = 'NPUA80644' } = {}) {
     const requests = [];
-    addCandidate(requests, profile, 'bolts', 'Bolts', profile.bolts);
-    addCandidate(requests, profile, 'health', 'Nanotech / health', profile.nanotech);
-    addCandidate(requests, profile, 'raritanium', 'Raritanium', profile.raritanium);
-    addCandidate(requests, profile, 'boltMultiplier', 'Bolt multiplier', profile.multiplier);
-    addCandidate(requests, profile, 'current.planet', 'Planet ID', profile.current?.planet);
-    addCandidate(requests, profile, 'current.item', 'Equipped item ID', profile.current?.item);
+    addCandidate(requests, profile, 'bolts', 'Bolts', profile.bolts, sourceProfile);
+    addCandidate(requests, profile, 'health', 'Nanotech / health', profile.nanotech, sourceProfile);
+    addCandidate(requests, profile, 'raritanium', 'Raritanium', profile.raritanium, sourceProfile);
+    addCandidate(requests, profile, 'boltMultiplier', 'Bolt multiplier', profile.multiplier, sourceProfile);
+    addCandidate(requests, profile, 'current.planet', 'Planet ID', profile.current?.planet, sourceProfile);
+    addCandidate(requests, profile, 'current.item', 'Equipped item ID', profile.current?.item, sourceProfile);
 
     for (const [key, weapon] of Object.entries(profile.weapons || {})) {
-        addCandidate(requests, profile, `weapons.${key}.unlocked`, `${weapon.name} unlock flag`, weapon.unlocked);
-        addCandidate(requests, profile, `weapons.${key}.ammo`, `${weapon.name} ammo`, weapon.ammo);
+        addCandidate(requests, profile, `weapons.${key}.unlocked`, `${weapon.name} unlock flag`, weapon.unlocked, sourceProfile);
+        addCandidate(requests, profile, `weapons.${key}.ammo`, `${weapon.name} ammo`, weapon.ammo, sourceProfile);
     }
     for (const [key, gadget] of Object.entries(profile.gadgets || {})) {
-        addCandidate(requests, profile, `gadgets.${key}.unlocked`, `${gadget.name} unlock flag`, gadget.unlocked);
+        addCandidate(requests, profile, `gadgets.${key}.unlocked`, `${gadget.name} unlock flag`, gadget.unlocked, sourceProfile);
     }
     for (const [key, item] of Object.entries(profile.items || {})) {
-        addCandidate(requests, profile, `items.${key}.unlocked`, `${item.name} unlock flag`, item.unlocked);
+        addCandidate(requests, profile, `items.${key}.unlocked`, `${item.name} unlock flag`, item.unlocked, sourceProfile);
     }
 
     return requests;
@@ -89,13 +89,16 @@ function decodeCandidate(request, rawRead) {
     return result;
 }
 
-export function buildProbeReport(rawResult, requests = buildCandidateRequests()) {
+export function buildProbeReport(rawResult, requests = buildCandidateRequests(), {
+    target = 'Ratchet & Clank 2 in the PS3 Collection (BCUS98282)',
+    sourceProfile = 'rc2_ps3_npua80644'
+} = {}) {
     const report = {
         schemaVersion: 1,
         observedAt: new Date().toISOString(),
-        target: 'Ratchet & Clank 2 in the PS3 Collection (BCUS98282)',
+        target,
         targetBuildStatus: 'unverified',
-        sourceProfile: 'rc2_ps3_npua80644',
+        sourceProfile,
         sourceProfileStatus: 'unverified candidates only',
         writesEnabled: false,
         status: rawResult.status
@@ -149,10 +152,17 @@ export function invokePowerShellReader({ processId, requests, runCommand = spawn
     }
 }
 
-export function runCollectionProbe({ processId, reader = invokePowerShellReader, profile = rc2Profile } = {}) {
-    const requests = buildCandidateRequests(profile);
+export function runCollectionProbe({
+    processId,
+    reader = invokePowerShellReader,
+    profile = rc2Profile,
+    sourceProfileName = 'NPUA80644',
+    target = 'Ratchet & Clank 2 in the PS3 Collection (BCUS98282)',
+    sourceProfile = 'rc2_ps3_npua80644'
+} = {}) {
+    const requests = buildCandidateRequests(profile, { sourceProfile: sourceProfileName });
     const rawResult = reader({ processId, requests });
-    return buildProbeReport(rawResult, requests);
+    return buildProbeReport(rawResult, requests, { target, sourceProfile });
 }
 
 export function parseProbeArguments(args) {
