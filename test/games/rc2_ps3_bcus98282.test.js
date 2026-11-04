@@ -18,6 +18,7 @@ test('uses the Collection title and RC2 inner app identity', () => {
 test('uses the confirmed big-endian bolt address and guest-base arithmetic', () => {
     assert.equal(profile.bigEndian, true);
     assert.equal(profile.boltOnly, true);
+    assert.equal(profile.writeEnabled, true);
     assert.equal(profile.rpcS3GuestBase, 0x300000000);
     assert.equal(profile.boltsGuestOffset, 0x01329E80);
     assert.deepEqual(profile.bolts, [0x301329E80, 'uint32']);
@@ -26,6 +27,6 @@ test('uses the confirmed big-endian bolt address and guest-base arithmetic', () 
 
 test('contains only the supported bolt address and reusable Collection metadata', () => {
     assert.deepEqual(Object.keys(profile).sort(), [
-        'bigEndian', 'boltOnly', 'bolts', 'boltsGuestOffset', 'collection', 'rpcS3GuestBase'
+        'bigEndian', 'boltOnly', 'bolts', 'boltsGuestOffset', 'collection', 'rpcS3GuestBase', 'writeEnabled'
     ]);
 });

@@ -81,9 +81,16 @@ metadata and checksums are in the adjacent `.meta.json` sidecars.
 
 Candidate B is confirmed for the tested session by two normal HUD transitions,
 the targeted write/read-back behavior, and the user's HUD confirmation. It is
-not yet trainer-ready: restart reproduction, active PPU build identity, and a
-runtime compatibility guard remain unverified. Do not enable a trainer write
-until those gates are satisfied.
+enabled in the RC1 bolt-only trainer profile at the user's direction. The
+profile uses a checked Win32 backend that verifies complete reads, writes, and
+read-back; RC2 keeps its existing memoryjs path.
+
+The user chose a one-embedded-game-at-a-time workflow with explicit profile
+selection instead of a runtime subgame guard. The Collection's outer title ID
+is shared, so the trainer does not independently prevent selecting the RC1
+profile while RC2 is active. Select the RC1 profile only while Collection Game
+1 is running. Restart reproduction and the active PPU executable/build remain
+unverified; the confirmed address is limited to the tested session.
 
 ## Next read-only evidence required
 

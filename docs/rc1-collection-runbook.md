@@ -104,17 +104,26 @@ its address or value relationship cannot be reproduced in this second session.
 
 ## Safety boundary and checks
 
-These tools do not write game memory. Do not add an RC1 Collection trainer
-profile or enable Set Bolts until the candidate is supported by at least two
-different normal HUD counts and reproduced after restart. A targeted write
-test on a backed-up save is a separate experiment and requires explicit user
-approval. If no reliable address is found, stop at documented read-only
-research.
+The candidate probe and snapshot/diff tools do not write game memory. Do not
+add an RC1 Collection trainer profile or enable Set Bolts until the candidate
+is supported by at least two different normal HUD counts. The tested profile
+now exposes Set Bolts using a checked Win32 backend that requires complete
+4-byte reads and writes, then verifies the read-back.
+
+At the user's direction, the trainer relies on selecting the correct embedded
+game profile while only one Collection game is running; it has no independent
+subgame identity guard. The outer title ID `BCUS98282` is shared, so selecting
+the RC1 profile while RC2 is active could target the wrong field. The validated
+address and user-authorized test results are recorded in the
+[investigation status](rc1-collection-investigation.md). Further write tests
+require explicit user approval. If no reliable address is found, stop at
+documented read-only research.
 
 The mocked automated reader/snapshot checks are:
 
 ```powershell
-node --test test/diagnostics/rc1-collection.test.js test/diagnostics/rc2-collection.test.js test/diagnostics/rc2-memory.test.js test/diagnostics/rc2-memory-diff.test.js
+node --test
+Invoke-Pester -Script .\test\scripts\collection-bolts.Tests.ps1
 Invoke-Pester -Script .\test\diagnostics\rc2-read-process.Tests.ps1
 ```
 

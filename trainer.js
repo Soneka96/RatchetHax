@@ -2,7 +2,8 @@ import inquirer from 'inquirer';
 import Game from './Game.js';
 import memoryjs from 'memoryjs';
 import chalk from 'chalk';
-import { getCollectionBoltProfileChoice, isBoltOnlyProfile, runBoltOnlyMenu } from './trainer-mode.js';
+import { getBoltOnlyMenuAccess, getBoltOnlyMemoryActions, getCollectionBoltProfileChoice, getCollectionRc1BoltProfileChoice, isBoltOnlyProfile, runBoltOnlyMenu } from './trainer-mode.js';
+import { readCollectionBolts, writeCollectionBolts } from './trainer-memory.js';
 
 const filteredProcesses = memoryjs.getProcesses().filter(p => p.szExeFile === 'pcsx2.exe' || p.szExeFile.startsWith('pcsx2-') || p.szExeFile === 'rpcs3.exe');
 const processChoices = filteredProcesses.map(p => {
@@ -42,6 +43,7 @@ const setupQuestions = [{
         { name: 'Ratchet & Clank 1 - NTSC v1.00', value: 'rc1_ps2_scus97199' },
         new inquirer.Separator('--- PS3 ---'),
         { name: 'Ratchet & Clank 1 [NPUA80643]', value: 'rc1_ps3_npua80643' },
+        getCollectionRc1BoltProfileChoice(),
         { name: 'Ratchet & Clank 2 [NPUA80644]', value: 'rc2_ps3_npua80644' },
         getCollectionBoltProfileChoice(),
         { name: 'Ratchet & Clank 3 [NPUA80645]', value: 'rc3_ps3_npua80645' },
@@ -208,6 +210,26 @@ async function setBolts() {
         message: 'Enter new bolt count:'
     }]);
     game.bolts = answer.bolts;
+}
+
+function readCollectionRc1Bolts() {
+    const processId = game.processObject?.th32ProcessID;
+    return readCollectionBolts({ processId, address: game.address.bolts[0] }).value;
+}
+
+async function setCollectionRc1Bolts() {
+    const answer = await inquirer.prompt([{
+        type: 'number',
+        name: 'bolts',
+        default: readCollectionRc1Bolts(),
+        message: 'Enter new bolt count:'
+    }]);
+    const result = writeCollectionBolts({
+        processId: game.processObject?.th32ProcessID,
+        address: game.address.bolts[0],
+        value: answer.bolts
+    });
+    console.log(chalk.bold(`Verified bolt count: ${result.afterValue}`));
 }
 
 async function setRaritanium() {
@@ -574,13 +596,22 @@ async function quit() {
 }
 
 async function boltOnlyMain() {
-    await runBoltOnlyMenu({
-        prompt: questions => inquirer.prompt(questions),
+    const gameTitle = game.address.collection?.gameTitle || 'Ratchet & Clank';
+    const menuAccess = getBoltOnlyMenuAccess(game.address);
+    const readOnly = !menuAccess.allowSetBolts;
+    const memoryActions = getBoltOnlyMemoryActions(game.address, {
         readBolts: () => game.bolts,
         setBolts,
+        readCollectionRc1Bolts,
+        setCollectionRc1Bolts
+    });
+    await runBoltOnlyMenu({
+        prompt: questions => inquirer.prompt(questions),
+        ...memoryActions,
         quit,
+        ...menuAccess,
         renderBolts: bolts => {
-            console.log(chalk.bold.green('─── Ratchet & Clank 2: Going Commando — Collection ───\n'));
+            console.log(chalk.bold.green(`─── ${gameTitle} — Collection${readOnly ? ' (read-only)' : ''} ───\n`));
             console.log(chalk.bold('Bolts: ') + bolts);
         },
         clear: () => console.clear()

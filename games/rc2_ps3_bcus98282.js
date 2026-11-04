@@ -12,6 +12,7 @@ export default {
         innerAppId: 'NPUA80644'
     },
     boltOnly: true,
+    writeEnabled: true,
     bigEndian: true,
     rpcS3GuestBase: 0x300000000,
     boltsGuestOffset: 0x01329E80,
