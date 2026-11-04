@@ -169,8 +169,10 @@ test('invokes the read-only PowerShell backend with exact candidate addresses', 
     assert.equal(invocation[0], 'powershell.exe');
     assert.ok(invocation[1].includes('-ProcessId'));
     assert.ok(invocation[1].includes('42'));
-    const requestsJson = invocation[1][invocation[1].indexOf('-RequestsJson') + 1];
-    assert.deepEqual(JSON.parse(requestsJson), [{
+    assert.ok(invocation[1].includes('-RequestsBase64'));
+    const requestsBase64 = invocation[1][invocation[1].indexOf('-RequestsBase64') + 1];
+    const requestsJsonLines = Buffer.from(requestsBase64, 'base64').toString('utf8');
+    assert.deepEqual(requestsJsonLines.split('\n').map(line => JSON.parse(line)), [{
         key: 'bolts', address: '0x0000000301329a90', requestedBytes: 4
     }]);
     assert.deepEqual(reader, { status: 'open_failed', errorCode: 5 });

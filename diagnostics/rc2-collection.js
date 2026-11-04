@@ -123,7 +123,10 @@ export function invokePowerShellReader({ processId, requests, runCommand = spawn
         '-File', scriptPath
     ];
     if (processId !== undefined) args.push('-ProcessId', String(processId));
-    args.push('-RequestsJson', JSON.stringify(requests.map(({ key, address, requestedBytes }) => ({ key, address, requestedBytes }))));
+    const requestsJsonLines = requests
+        .map(({ key, address, requestedBytes }) => JSON.stringify({ key, address, requestedBytes }))
+        .join('\n');
+    args.push('-RequestsBase64', Buffer.from(requestsJsonLines, 'utf8').toString('base64'));
 
     const result = runCommand('powershell.exe', args, {
         encoding: 'utf8',
