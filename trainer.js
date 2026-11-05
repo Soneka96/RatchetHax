@@ -2,6 +2,8 @@ import inquirer from 'inquirer';
 import Game from './Game.js';
 import memoryjs from 'memoryjs';
 import chalk from 'chalk';
+import { getBoltOnlyMenuAccess, getCollectionBoltProfileChoice, getCollectionRc1BoltProfileChoice, getCollectionRc3BoltProfileChoice, isBoltOnlyProfile, promptAndSetBolts, runBoltOnlyMenu } from './trainer-mode.js';
+import { replaceGameForSelection } from './trainer-session.js';
 
 const filteredProcesses = memoryjs.getProcesses().filter(p => p.szExeFile === 'pcsx2.exe' || p.szExeFile.startsWith('pcsx2-') || p.szExeFile === 'rpcs3.exe');
 const processChoices = filteredProcesses.map(p => {
@@ -25,12 +27,7 @@ const targetProcess = processChoices.length > 1 ? await inquirer.prompt({
     choices: processChoices
 }) : undefined;
 
-const setupQuestions = [{
-    type: 'input',
-    name: 'process',
-    default: 'pcsx2.exe',
-    message: 'Enter the process name or PID to target:'
-},{
+const versionQuestion = {
     type: 'list',
     name: 'version',
     message: 'Which game version is running in this process?',
@@ -41,19 +38,29 @@ const setupQuestions = [{
         { name: 'Ratchet & Clank 1 - NTSC v1.00', value: 'rc1_ps2_scus97199' },
         new inquirer.Separator('--- PS3 ---'),
         { name: 'Ratchet & Clank 1 [NPUA80643]', value: 'rc1_ps3_npua80643' },
+        getCollectionRc1BoltProfileChoice(),
         { name: 'Ratchet & Clank 2 [NPUA80644]', value: 'rc2_ps3_npua80644' },
+        getCollectionBoltProfileChoice(),
         { name: 'Ratchet & Clank 3 [NPUA80645]', value: 'rc3_ps3_npua80645' },
+        getCollectionRc3BoltProfileChoice(),
         { name: 'Ratchet & Clank: Deadlocked [NPUA80646]', value: 'rc4_ps3_npua80646' },
         { name: 'Ratchet & Clank: Tools of Destruction [NPUA80965]', value: 'rctod_ps3_npua80965' },
         { name: 'Ratchet & Clank: A Crack in Time [BCES00748]', value: 'rcacit_ps3_bces00748' }
     ]
-}];
+};
+
+const setupQuestions = [{
+    type: 'input',
+    name: 'process',
+    default: 'pcsx2.exe',
+    message: 'Enter the process name or PID to target:'
+}, versionQuestion];
 
 if (targetProcess?.id) setupQuestions.splice(0, 1);
 
-const setup = await inquirer.prompt(setupQuestions);
-
-const game = new Game(targetProcess.id || setup.process, setup.version);
+let setup = await inquirer.prompt(setupQuestions);
+const processIdentifier = targetProcess?.id || setup.process;
+let game = new Game(processIdentifier, setup.version);
 console.log('Connected to game with process handle ' + game.process);
 
 const select = {
@@ -199,13 +206,11 @@ async function setNanotech() {
 }
 
 async function setBolts() {
-    const answer = await inquirer.prompt([{
-        type: 'number',
-        name: 'bolts',
-        default: game.bolts,
-        message: 'Enter new bolt count:'
-    }]);
-    game.bolts = answer.bolts;
+    await promptAndSetBolts({
+        prompt: question => inquirer.prompt([question]),
+        readBolts: () => game.bolts,
+        writeBolts: value => { game.bolts = value; }
+    });
 }
 
 async function setRaritanium() {
@@ -571,6 +576,31 @@ async function quit() {
     process.exit(0);
 }
 
+const RETURN_TO_GAME_VERSION_LIST = Symbol('return-to-game-version-list');
+
+async function quitBoltOnlyMenu() {
+    console.clear();
+    return RETURN_TO_GAME_VERSION_LIST;
+}
+
+async function boltOnlyMain() {
+    const gameTitle = game.address.collection?.gameTitle || 'Ratchet & Clank';
+    const menuAccess = getBoltOnlyMenuAccess(game.address);
+    const readOnly = !menuAccess.allowSetBolts;
+    return await runBoltOnlyMenu({
+        prompt: questions => inquirer.prompt(questions),
+        readBolts: () => game.bolts,
+        setBolts,
+        quit: quitBoltOnlyMenu,
+        ...menuAccess,
+        renderBolts: bolts => {
+            console.log(chalk.bold.green(`─── ${gameTitle} — Collection${readOnly ? ' (read-only)' : ''} ───\n`));
+            console.log(chalk.bold('Bolts: ') + bolts);
+        },
+        clear: () => console.clear()
+    });
+}
+
 /* if (process.platform === "win32") {
     const readline = await import("readline");
     var rl = readline.createInterface({input: process.stdin, output: process.stdout});
@@ -666,6 +696,8 @@ async function menu(menuKey) {
 
 async function main() {
 
+    if (isBoltOnlyProfile(game.address)) return await boltOnlyMain();
+
     console.log(chalk.bold.green('─── Main Menu ───'));
 
     if (infiniteNanotechTimer) console.log(chalk.bold.yellowBright('Infinite Health is currently active.'));
@@ -740,5 +772,17 @@ async function main() {
 }
 
 console.clear();
-await main();
+let result = await main();
+while (result === RETURN_TO_GAME_VERSION_LIST) {
+    const replacement = await replaceGameForSelection({
+        closeGame: () => game.close(),
+        promptSelection: () => inquirer.prompt([versionQuestion]),
+        createGame: (processId, version) => new Game(processId, version),
+        processIdentifier
+    });
+    setup = { ...setup, version: replacement.selection.version };
+    game = replacement.game;
+    console.log('Connected to game with process handle ' + game.process);
+    result = await main();
+}
 game.close();
