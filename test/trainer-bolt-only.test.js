@@ -6,11 +6,13 @@ import test from 'node:test';
 
 import profile from '../games/rc2_ps3_bcus98282.js';
 import rc1CollectionProfile from '../games/rc1_ps3_bcus98282.js';
+import rc3CollectionProfile from '../games/rc3_ps3_bcus98282.js';
 import {
     getBoltOnlyMenuChoices,
     getBoltOnlyMenuAccess,
     getCollectionBoltProfileChoice,
     getCollectionRc1BoltProfileChoice,
+    getCollectionRc3BoltProfileChoice,
     isBoltOnlyProfile,
     promptAndSetBolts,
     runBoltOnlyMenu,
@@ -27,7 +29,53 @@ test('registers the correctly named Collection RC2 bolt-only build', () => {
     });
     assert.equal(isBoltOnlyProfile(profile), true);
     assert.equal(isBoltOnlyProfile(rc1CollectionProfile), true);
+    assert.equal(isBoltOnlyProfile(rc3CollectionProfile), true);
     assert.equal(isBoltOnlyProfile({}), false);
+});
+
+test('registers Collection RC3 with its own bolt-only profile and address', () => {
+    assert.deepEqual(getCollectionRc3BoltProfileChoice(), {
+        name: 'Ratchet & Clank 3: Up Your Arsenal [Collection BCUS98282] - Bolts only',
+        value: 'rc3_ps3_bcus98282'
+    });
+    assert.equal(rc3CollectionProfile.writeEnabled, true);
+    assert.deepEqual(rc3CollectionProfile.bolts, [0x300C1EDAC, 'uint32']);
+    assert.notDeepEqual(rc3CollectionProfile.bolts, profile.bolts);
+    assert.notDeepEqual(rc3CollectionProfile.bolts, rc1CollectionProfile.bolts);
+});
+
+test('routes RC3 through the shared bolt-only menu with no other actions', async () => {
+    let bolts = 753;
+    let setCalls = 0;
+    let quitCalls = 0;
+    const actions = ['setBolts', 'quit'];
+    const menuAccess = getBoltOnlyMenuAccess(rc3CollectionProfile);
+    const choices = getBoltOnlyMenuChoices(menuAccess);
+
+    await runBoltOnlyMenu({
+        prompt: async options => {
+            assert.deepEqual(options.choices.map(choice => choice.value), ['refresh', 'setBolts', 'quit']);
+            return { action: actions.shift() };
+        },
+        readBolts: () => bolts,
+        setBolts: async () => {
+            setCalls += 1;
+            bolts = await setBoltCountAndVerify({
+                readBolts: () => bolts,
+                writeBolts: value => { bolts = value; },
+                value: 1755
+            });
+        },
+        quit: async () => { quitCalls += 1; },
+        renderBolts: () => {},
+        clear: () => {},
+        ...menuAccess
+    });
+
+    assert.equal(choices.find(choice => choice.value === 'setBolts').disabled, undefined);
+    assert.equal(bolts, 1755);
+    assert.equal(setCalls, 1);
+    assert.equal(quitCalls, 1);
 });
 
 test('registers Collection RC1 as a separate bolt-only profile', () => {
@@ -229,6 +277,7 @@ test('returns the Quit callback result to the outer setup flow', async () => {
 test('routes both Collection profiles through bolt-only handling before generic trainer reads', () => {
     assert.match(trainerSource, /getCollectionBoltProfileChoice\(\)/);
     assert.match(trainerSource, /getCollectionRc1BoltProfileChoice\(\)/);
+    assert.match(trainerSource, /getCollectionRc3BoltProfileChoice\(\)/);
     assert.match(trainerSource, /runBoltOnlyMenu\(/);
     assert.match(trainerSource, /const menuAccess = getBoltOnlyMenuAccess\(game\.address\)/);
     assert.match(trainerSource, /readBolts: \(\) => game\.bolts/);

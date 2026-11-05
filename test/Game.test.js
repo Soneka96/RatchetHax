@@ -33,8 +33,7 @@ test('Game construction resets memoryjs endianness when returning to a PS2 profi
         collectionGame.close();
 
         const ps2Game = new Game(17, 'rc1_ps2_scus97199');
-        assert.equal(memoryjs.UINT32, originalTypes.UINT32);
-        assert.equal(memoryjs.INT32, originalTypes.INT32);
+        for (const name of names) assert.equal(memoryjs[name], originalTypes[name]);
         ps2Game.close();
     } finally {
         memoryjs.openProcess = originalOpenProcess;
@@ -64,7 +63,8 @@ test('Collection Game bolts use each profile address through the shared Game API
     try {
         for (const [version, address] of [
             ['rc1_ps3_bcus98282', 0x3009BC3A0],
-            ['rc2_ps3_bcus98282', 0x301329E80]
+            ['rc2_ps3_bcus98282', 0x301329E80],
+            ['rc3_ps3_bcus98282', 0x300C1EDAC]
         ]) {
             const game = new Game(77, version);
             assert.equal(game.bolts, 99453);

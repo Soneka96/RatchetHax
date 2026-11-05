@@ -1,5 +1,6 @@
 export const COLLECTION_RC2_BOLT_PROFILE = 'rc2_ps3_bcus98282';
 export const COLLECTION_RC1_BOLT_PROFILE = 'rc1_ps3_bcus98282';
+export const COLLECTION_RC3_BOLT_PROFILE = 'rc3_ps3_bcus98282';
 
 export function getCollectionRc1BoltProfileChoice() {
     return {
@@ -12,6 +13,13 @@ export function getCollectionBoltProfileChoice() {
     return {
         name: 'Ratchet & Clank 2: Going Commando [Collection BCUS98282] - Bolts only',
         value: COLLECTION_RC2_BOLT_PROFILE
+    };
+}
+
+export function getCollectionRc3BoltProfileChoice() {
+    return {
+        name: 'Ratchet & Clank 3: Up Your Arsenal [Collection BCUS98282] - Bolts only',
+        value: COLLECTION_RC3_BOLT_PROFILE
     };
 }
 

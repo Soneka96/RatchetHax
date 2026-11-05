@@ -2,7 +2,7 @@ import inquirer from 'inquirer';
 import Game from './Game.js';
 import memoryjs from 'memoryjs';
 import chalk from 'chalk';
-import { getBoltOnlyMenuAccess, getCollectionBoltProfileChoice, getCollectionRc1BoltProfileChoice, isBoltOnlyProfile, promptAndSetBolts, runBoltOnlyMenu } from './trainer-mode.js';
+import { getBoltOnlyMenuAccess, getCollectionBoltProfileChoice, getCollectionRc1BoltProfileChoice, getCollectionRc3BoltProfileChoice, isBoltOnlyProfile, promptAndSetBolts, runBoltOnlyMenu } from './trainer-mode.js';
 import { replaceGameForSelection } from './trainer-session.js';
 
 const filteredProcesses = memoryjs.getProcesses().filter(p => p.szExeFile === 'pcsx2.exe' || p.szExeFile.startsWith('pcsx2-') || p.szExeFile === 'rpcs3.exe');
@@ -42,6 +42,7 @@ const versionQuestion = {
         { name: 'Ratchet & Clank 2 [NPUA80644]', value: 'rc2_ps3_npua80644' },
         getCollectionBoltProfileChoice(),
         { name: 'Ratchet & Clank 3 [NPUA80645]', value: 'rc3_ps3_npua80645' },
+        getCollectionRc3BoltProfileChoice(),
         { name: 'Ratchet & Clank: Deadlocked [NPUA80646]', value: 'rc4_ps3_npua80646' },
         { name: 'Ratchet & Clank: Tools of Destruction [NPUA80965]', value: 'rctod_ps3_npua80965' },
         { name: 'Ratchet & Clank: A Crack in Time [BCES00748]', value: 'rcacit_ps3_bces00748' }
